@@ -12,6 +12,89 @@ const BULB_NIGHT = new THREE.Color('#ffcf73');
 const TV_GLOW = new THREE.Color('#9fc4ff');
 const WHITE = new THREE.Color('#ffffff');
 
+// Character rig, evaluated per vertex on the GPU. Every vertex knows its bone
+// (0 body, 1 head, 2 left arm, 3 right arm), the bone's pivot, the character's
+// feet (root), its activity and a random seed. Activities:
+// 0 idle, 1 read, 2 sip, 3 paint, 4 strum, 5 wave, 6 listen, 7 row.
+const RIG_PARS = /* glsl */ `
+  attribute float aBone;
+  attribute vec3 aPivot;
+  attribute vec3 aRoot;
+  attribute vec2 aAnim;
+  uniform float uTime;
+  uniform float uBeatPh;
+  uniform float uBeatLen;
+  vec3 rigRotX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c); }
+  vec3 rigRotZ(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x * c - v.y * s, v.x * s + v.y * c, v.z); }
+  float rigHit() { return pow(1.0 - clamp(uBeatPh, 0.0, 1.0), 3.0); }
+  // (pitch about X, roll about Z) for this vertex's bone.
+  vec2 rigBone() {
+    int bone = int(aBone + 0.5);
+    int act = int(aAnim.x + 0.5);
+    float seed = aAnim.y;
+    float hit = rigHit();
+    float g = 0.6 + 0.4 * fract(seed * 7.31);
+    float t = uTime + seed * 10.0;
+    float hb = uTime * 3.14159 / max(uBeatLen, 0.3) + seed * 6.0;
+    float pitch = 0.0, roll = 0.0;
+    if (bone == 1) {
+      if (act == 1) { pitch = 0.2 + 0.05 * hit; roll = 0.05 * sin(t * 0.5); }
+      else if (act == 6) { pitch = 0.3 * hit * g - 0.04; roll = 0.1 * sin(hb); }
+      else { pitch = 0.14 * hit * g; roll = 0.07 * sin(t * 1.1); }
+    } else if (bone == 3) {
+      if (act == 2) { float x = fract(t * 0.09); pitch = -1.05 * smoothstep(0.0, 0.12, x) * (1.0 - smoothstep(0.3, 0.42, x)); }
+      else if (act == 3) { pitch = -0.15 + 0.3 * sin(t * 5.0); roll = 0.2 * sin(t * 2.5); }
+      else if (act == 4) { pitch = 0.32 * sin(uBeatPh * 12.566); }
+      else if (act == 5) { roll = 2.3 + 0.35 * sin(uBeatPh * 6.283); }
+      else if (act == 1) { float x = fract(t * 0.07); roll = -0.55 * smoothstep(0.0, 0.06, x) * (1.0 - smoothstep(0.1, 0.18, x)); }
+      else if (act == 7) { pitch = 0.45 * sin(t * 2.2); }
+      else { pitch = 0.12 * sin(hb); roll = 0.08 * hit; }
+    } else if (bone == 2) {
+      if (act == 5) { roll = -0.3 * hit; }
+      else if (act == 7) { pitch = 0.45 * sin(t * 2.2); }
+      else if (act == 0 || act == 6) { pitch = -0.12 * sin(hb); roll = -0.08 * hit; }
+    }
+    return vec2(pitch, roll);
+  }
+  // (squash, sway) for the whole character about its feet.
+  vec2 rigBody() {
+    int act = int(aAnim.x + 0.5);
+    float seed = aAnim.y;
+    float g = 0.6 + 0.4 * fract(seed * 7.31);
+    float hb = uTime * 3.14159 / max(uBeatLen, 0.3) + seed * 6.0;
+    float groove = (act == 5 || act == 6) ? 1.5 : 1.0;
+    float sway = (act == 5 || act == 6) ? 0.06 * sin(hb) : 0.02 * sin(uTime * 0.8 + seed * 9.0);
+    return vec2(0.05 * rigHit() * g * groove, sway);
+  }
+`;
+const RIG_NORMAL = /* glsl */ `
+  vec2 rigB = rigBone();
+  vec2 rigC = rigBody();
+  objectNormal = rigRotZ(rigRotX(rigRotZ(objectNormal, rigB.y), rigB.x), rigC.y);
+`;
+const RIG_POSITION = /* glsl */ `
+  vec2 rigB2 = rigBone();
+  vec2 rigC2 = rigBody();
+  vec3 rigL = transformed - aPivot;
+  transformed = aPivot + rigRotX(rigRotZ(rigL, rigB2.y), rigB2.x);
+  vec3 rigR = transformed - aRoot;
+  rigR.y *= 1.0 - rigC2.x;
+  rigR.xz *= 1.0 + rigC2.x * 0.5;
+  transformed = aRoot + rigRotZ(rigR, rigC2.y);
+`;
+
+function rigged<M extends THREE.Material>(m: M, uniforms: Record<string, THREE.IUniform>, normals: boolean): M {
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    let vs = shader.vertexShader.replace('#include <common>', '#include <common>\n' + RIG_PARS);
+    if (normals) vs = vs.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n' + RIG_NORMAL);
+    vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + RIG_POSITION);
+    shader.vertexShader = vs;
+  };
+  m.customProgramCacheKey = () => 'rig' + (normals ? 'n' : '');
+  return m;
+}
+
 export class Materials {
   readonly gradient = toonGradient();
   readonly brush = brushTexture();
@@ -73,6 +156,11 @@ export class Materials {
 
   readonly water: THREE.ShaderMaterial;
 
+  /** Shared clock for every character rig. */
+  readonly rigUniforms = { uTime: { value: 0 }, uBeatPh: { value: 1 }, uBeatLen: { value: 0.8 } };
+  readonly charToon: THREE.MeshToonMaterial;
+  readonly charInk: THREE.MeshBasicMaterial;
+
   /** Flat cut-outs (sprites, signs) multiply by this each frame. */
   readonly spriteTint = new THREE.Color('#ffffff');
   private readonly tinted = new Set<THREE.Material & { color: THREE.Color }>();
@@ -83,6 +171,13 @@ export class Materials {
     const g = this.gradient;
     g.colorSpace = THREE.NoColorSpace;
     this.tinted.add(this.signs);
+
+    this.charToon = rigged(
+      new THREE.MeshToonMaterial({ vertexColors: true, map: this.brush, gradientMap: this.gradient }),
+      this.rigUniforms,
+      true,
+    );
+    this.charInk = rigged(new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide }), this.rigUniforms, false);
 
     this.flags = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.gradient, side: THREE.DoubleSide });
     const fu = this.flagUniforms;
@@ -213,5 +308,7 @@ export class Materials {
     wu.uNight.value = n;
     wu.uPulse.value = beatPulse;
     this.ink.color.set(INK).lerp(p.shadowLift, 0.15);
+    this.charInk.color.copy(this.ink.color);
+    this.rigUniforms.uTime.value = time;
   }
 }

@@ -20,6 +20,17 @@ export class GeoBuilder {
   private uv: number[] = [];
   private col: number[] = [];
   private idx: number[] = [];
+  /** Animation tags: from vertex `start` on, every vertex carries `tag`. */
+  private tags: { start: number; tag: number[] }[] = [];
+
+  /**
+   * Tag following vertices for the character shader:
+   * [bone, pivotX, pivotY, pivotZ, rootX, rootY, rootZ, activity, seed].
+   */
+  setTag(tag: number[]): this {
+    this.tags.push({ start: this.pos.length / 3, tag });
+    return this;
+  }
 
   get empty(): boolean {
     return this.idx.length === 0;
@@ -156,6 +167,27 @@ export class GeoBuilder {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    if (this.tags.length) {
+      const n = this.pos.length / 3;
+      const bone = new Float32Array(n);
+      const pivot = new Float32Array(n * 3);
+      const root = new Float32Array(n * 3);
+      const anim = new Float32Array(n * 2);
+      this.tags.forEach((r, i) => {
+        const end = i + 1 < this.tags.length ? this.tags[i + 1].start : n;
+        const t = r.tag;
+        for (let k = r.start; k < end; k++) {
+          bone[k] = t[0];
+          pivot.set([t[1], t[2], t[3]], k * 3);
+          root.set([t[4], t[5], t[6]], k * 3);
+          anim.set([t[7], t[8]], k * 2);
+        }
+      });
+      g.setAttribute('aBone', new THREE.BufferAttribute(bone, 1));
+      g.setAttribute('aPivot', new THREE.BufferAttribute(pivot, 3));
+      g.setAttribute('aRoot', new THREE.BufferAttribute(root, 3));
+      g.setAttribute('aAnim', new THREE.BufferAttribute(anim, 2));
+    }
     g.setIndex(this.pos.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
     g.computeBoundingSphere();
     g.computeBoundingBox();
@@ -172,6 +204,12 @@ export class InkedBuilder {
   readonly outline = new GeoBuilder();
 
   constructor(private thickness = 0.09) {}
+
+  setTag(tag: number[]): this {
+    this.fill.setTag(tag);
+    this.outline.setTag(tag);
+    return this;
+  }
 
   box(x: number, y: number, z: number, w: number, h: number, d: number, color: THREE.ColorRepresentation, rotY = 0, ink = true): this {
     this.fill.box(x, y, z, w, h, d, color, rotY);

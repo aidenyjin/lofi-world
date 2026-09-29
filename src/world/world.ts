@@ -303,7 +303,9 @@ export class World {
     }
     this.particles.update(dt, this.camX, chimneys, fountains, this.leaves.wind, p.nightness, p.haze, this.renderer.domElement.height);
     this.fireflies.update(t, this.camX, p.nightness, this.beatPulse);
-    this.bobResidents();
+    // Characters animate on the GPU; just feed the rig its clock.
+    this.mats.rigUniforms.uBeatPh.value = this.beatPhase;
+    this.mats.rigUniforms.uBeatLen.value = this.beatSeconds;
 
     // --- Post ---------------------------------------------------------------
     this.post.update(this.camera, p, t);
@@ -315,17 +317,5 @@ export class World {
     u.uLeakPos.value.set(this.sunDir.x > 0 ? 0.9 : 0.1, 1.05);
     if (this.debugNoPost) this.renderer.render(this.scene, this.camera);
     else this.post.render(this.renderer, this.scene, this.camera);
-  }
-
-  private bobResidents() {
-    // Everyone nods on the beat: a quick squash on the hit, easing back up.
-    const hit = Math.pow(1 - this.beatPhase, 3);
-    for (const c of this.chunks.values()) {
-      for (const r of c.residents) {
-        const k = hit * 0.07 * r.bounce;
-        const sway = Math.sin(this.elapsed * 1.3 + r.phase) * 0.015;
-        r.sprite.scale.set(r.baseScale.x * (1 + k * 0.6), r.baseScale.y * (1 - k + sway), 1);
-      }
-    }
   }
 }

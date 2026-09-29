@@ -5,7 +5,7 @@ import { WALLS, TRIM, ROOF, FOLIAGE } from '../palette';
 import { GeoBuilder, InkedBuilder } from './geo';
 import type { Materials } from './materials';
 import type { UVRect } from './textures';
-import { CAST, castTexture, type Pose } from './cast';
+import { buildCharacter, Act, type Pose } from './characters';
 
 // The city is generated in chunks along +X (the direction the camera drifts).
 // Each chunk is a strip of blocks receding into the distance:
@@ -90,13 +90,6 @@ function matE(x: number, y: number, z: number, sx: number, sy: number, sz: numbe
   return m4.compose(v.set(x, y, z), q, s.set(sx, sy, sz));
 }
 
-export interface Resident {
-  sprite: THREE.Sprite;
-  baseScale: THREE.Vector2;
-  phase: number;
-  bounce: number; // how much this one grooves (readers bob less)
-}
-
 /** All the per-material builders one chunk writes into. */
 interface Builders {
   ink: InkedBuilder;
@@ -110,6 +103,7 @@ interface Builders {
   flags: GeoBuilder;
   water: GeoBuilder;
   glass: GeoBuilder;
+  chars: InkedBuilder;
   wires: THREE.Vector3[][];
 }
 
@@ -149,7 +143,6 @@ export function buildCar(ink: InkedBuilder, lights: GeoBuilder | null, x: number
 
 export class CityChunk {
   readonly group = new THREE.Group();
-  readonly residents: Resident[] = [];
   /** World-space chimney tops (smoke emitters). */
   readonly chimneys: THREE.Vector3[] = [];
   /** World-space fountain spouts. */
@@ -183,6 +176,7 @@ export class CityChunk {
       flags: new GeoBuilder(),
       water: new GeoBuilder(),
       glass: new GeoBuilder(),
+      chars: new InkedBuilder(0.045),
       wires: [],
     };
 
@@ -235,6 +229,10 @@ export class CityChunk {
       [b.glow, m.glow], [b.glass, m.glass],
     ];
     for (const [builder, material, shadow] of opt) if (!builder.empty) this.addMesh(builder.build(), material, !!shadow);
+    if (!b.chars.fill.empty) {
+      this.addMesh(b.chars.fill.build(), m.charToon, false);
+      this.addMesh(b.chars.outline.build(), m.charInk, false);
+    }
     if (b.wires.length) {
       const segs: number[] = [];
       for (const line of b.wires) {
@@ -453,7 +451,7 @@ export class CityChunk {
       ink.fill.box(x, y + 0.45, z, 0.9, 0.05, 0.05, rng.pick(ACCENTS));
       ink.fill.box(x + 0.1, y + 0.55, z, 0.05, 0.3, 0.05, rng.pick(ACCENTS));
     } else if (rng.chance(0.3)) {
-      this.resident(rng, x, y, z - 0.1, 'stand');
+      this.resident(rng, b, x, y, z - 0.1, 'stand');
     }
   }
 
@@ -519,10 +517,10 @@ export class CityChunk {
       // Bench facing the water
       ink.box(x, 0.45, z0 + 1.4, 1.6, 0.1, 0.5, WOOD);
       ink.box(x, 0.8, z0 + 1.7, 1.6, 0.4, 0.08, WOOD);
-      if (rng.chance(0.5)) this.resident(rng, x + rng.range(-0.3, 0.3), 0.05, z0 + 1.35, 'sit');
+      if (rng.chance(0.5)) this.resident(rng, b, x + rng.range(-0.3, 0.3), 0.05, z0 + 1.35, 'sit');
     }
     if (rng.chance(0.5)) this.stall(rng, b, rng.range(8, CHUNK_W - 4), z0 + 4.2, 2.1);
-    if (rng.chance(0.5)) this.resident(rng, rng.range(6, CHUNK_W - 2), 0.02, z0 + rng.range(2.2, 4.5), 'stand');
+    if (rng.chance(0.5)) this.resident(rng, b, rng.range(6, CHUNK_W - 2), 0.02, z0 + rng.range(2.2, 4.5), 'stand');
     for (let x = AVENUE_W + 3; x < CHUNK_W - 1; x += rng.range(5, 9)) if (rng.chance(0.4)) this.furniture(rng, b, x, z1 - 0.6, 0);
     // Gardens in front of the promenade (mostly seen on tall phone screens)
     const g0 = z1 + 1.1;
@@ -614,7 +612,7 @@ export class CityChunk {
       ink.fill.geometry(CYL6, mat(tx, 1.3, tz, 0.03, 1.6, 0.03), '#4a3a48');
       ink.geometry(CONE8, mat(tx, 2.1, tz, 0.95, 0.35, 0.95), accent);
       for (const sx of [-0.45, 0.45]) ink.box(tx + sx, 0.4, tz, 0.3, 0.06, 0.3, WOOD, 0, false);
-      if (rng.chance(0.5)) this.resident(rng, tx + 0.5, 0.16, tz + 0.15, 'sit');
+      if (rng.chance(0.5)) this.resident(rng, b, tx + 0.5, 0.16, tz + 0.15, 'sit');
     }
   }
 
@@ -823,7 +821,7 @@ export class CityChunk {
 
     if (rng.chance(row <= 2 ? 0.4 : 0.18)) {
       const count = rng.chance(0.3) ? 2 : 1;
-      for (let i = 0; i < count; i++) this.resident(rng, rng.range(usable.x0 + 0.4, usable.x1 - 0.4), roofY, usable.z1 - rng.range(0, 1.2));
+      for (let i = 0; i < count; i++) this.resident(rng, b, rng.range(usable.x0 + 0.4, usable.x1 - 0.4), roofY, usable.z1 - rng.range(0, 1.2));
     }
   }
 
@@ -922,7 +920,7 @@ export class CityChunk {
     ink.box(cx + 1.3, 0.75, cz + d / 2 - 1.2, 1.6, 0.12, 0.6, WOOD);
     ink.box(cx + 1.3, 1.1, cz + d / 2 - 1.5, 1.6, 0.5, 0.1, WOOD);
     this.lampPost(b, cx - 0.9, cz + d / 2 - 1.2, 0.3, false);
-    if (rng.chance(0.7)) this.resident(rng, cx + 1.3, 0.3, cz + d / 2 - 0.9, 'sit');
+    if (rng.chance(0.7)) this.resident(rng, b, cx + 1.3, 0.3, cz + d / 2 - 0.9, 'sit');
   }
 
   private market(rng: Rng, b: Builders, cx: number, cz: number, w: number, d: number) {
@@ -950,7 +948,7 @@ export class CityChunk {
       this.sagLine(a, c, 0.5, b.wires, b.bulbs, 0.09);
     }
     const shoppers = rng.int(1, 3);
-    for (let i = 0; i < shoppers; i++) this.resident(rng, cx + rng.range(-w / 2 + 0.8, w / 2 - 0.8), 0.12, cz + d / 2 - rng.range(0.4, 1.4), 'stand');
+    for (let i = 0; i < shoppers; i++) this.resident(rng, b, cx + rng.range(-w / 2 + 0.8, w / 2 - 0.8), 0.12, cz + d / 2 - rng.range(0.4, 1.4), 'stand');
   }
 
   private stall(rng: Rng, b: Builders, x: number, z: number, sw: number) {
@@ -987,22 +985,18 @@ export class CityChunk {
 
   // =========================================================================
 
-  private resident(rng: Rng, x: number, y: number, z: number, forcePose?: Pose) {
-    const pool = forcePose ? CAST.filter((c) => c.pose === forcePose) : CAST;
-    const member = rng.pick(pool.length ? pool : CAST);
-    const sprite = new THREE.Sprite(this.mats.spriteMaterial(castTexture(member)));
-    const h = member.worldHeight * rng.range(0.94, 1.06);
-    const scale = new THREE.Vector2((h * member.width) / member.height, h);
-    if (rng.chance(0.5)) scale.x *= -1;
-    sprite.center.set(0.5, 0.02);
-    sprite.position.set(x, y, z);
-    sprite.scale.set(scale.x, scale.y, 1);
-    this.group.add(sprite);
-    this.residents.push({ sprite, baseScale: scale, phase: rng.range(0, Math.PI * 2), bounce: member.bounce });
+  private resident(rng: Rng, b: Builders, x: number, y: number, z: number, forcePose?: Pose) {
+    const pose: Pose = forcePose ?? (rng.chance(0.45) ? 'sit' : 'stand');
+    const acts = pose === 'sit'
+      ? [Act.Read, Act.Read, Act.Sip, Act.Strum, Act.Listen, Act.Idle]
+      : [Act.Idle, Act.Wave, Act.Sip, Act.Paint, Act.Listen, Act.Listen];
+    const act = rng.pick(acts);
+    // Painters need room for the easel on their right.
+    buildCharacter(b.chars, rng, act === Act.Paint ? x - 0.5 : x, y, z, { pose, act });
 
-    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(scale.x) * 0.9, 1.2), this.mats.blobShadow);
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.1), this.mats.blobShadow);
     shadow.rotation.x = -Math.PI / 2;
-    shadow.position.set(x, y + 0.03, z);
+    shadow.position.set(x, y + 0.03, z + (pose === 'sit' ? 0.3 : 0));
     this.group.add(shadow);
     this.disposables.push(shadow.geometry);
   }

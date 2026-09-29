@@ -3,7 +3,8 @@ import { InkedBuilder, GeoBuilder } from './geo';
 import type { Materials } from './materials';
 import { buildBoat, buildCar, CANAL_Z, TRAFFIC_STREETS, WATER_Y } from './city';
 import { puffTexture } from './textures';
-import { CAST, castTexture } from './cast';
+import { buildCharacter, Act } from './characters';
+import { Rng } from '../rng';
 
 // Things that move on their own: traffic, boats, birds, smoke, spray and
 // fireflies. Each keeps a fixed pool of objects recycled around the camera,
@@ -72,7 +73,6 @@ export class Traffic {
 export class Boats {
   readonly group = new THREE.Group();
   private boats: Mover[] = [];
-  private sprites: THREE.Sprite[] = [];
 
   constructor(mats: Materials) {
     const colors = ['#e9786f', '#6fa7e0', '#57b39a', '#f6b94f'];
@@ -84,14 +84,10 @@ export class Boats {
       const obj = meshesFrom(ink, lights, mats);
       obj.position.set(0, WATER_Y, CANAL_Z + (dir === 1 ? 0.7 : -0.7));
       if (i !== 1) {
-        const member = CAST.find((c) => c.pose === 'sit') ?? CAST[0];
-        const sprite = new THREE.Sprite(mats.spriteMaterial(castTexture(member)));
-        const h = member.worldHeight * 0.85;
-        sprite.center.set(0.5, 0.05);
-        sprite.scale.set((h * member.width) / member.height * dir, h, 1);
-        sprite.position.set(-0.3, 0.3, 0);
-        obj.add(sprite);
-        this.sprites.push(sprite);
+        // A rower, animated by the same rig as the rooftop residents.
+        const who = new InkedBuilder(0.045);
+        buildCharacter(who, new Rng(31 + i * 7), -0.2, 0.3, 0, { pose: 'sit', act: Act.Row, scale: 1.0, yaw: dir === 1 ? 0.2 : -0.2 });
+        obj.add(new THREE.Mesh(who.fill.build(), mats.charToon), new THREE.Mesh(who.outline.build(), mats.charInk));
       }
       this.group.add(obj);
       this.boats.push({ obj, x: (i / 4) * (SPAN_AHEAD + SPAN_BEHIND) - SPAN_BEHIND, speed: 1.2 + Math.random() * 0.8, dir: dir as 1 | -1, phase: Math.random() * 6 });

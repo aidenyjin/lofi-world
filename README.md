@@ -23,7 +23,7 @@ The music engine is the conductor. Every event is scheduled on the audio clock a
 
 | Music | World |
 | --- | --- |
-| beat | residents nod, string lights and lamp pools breathe at night, boats bob, water glints |
+| beat | residents nod, strum, wave and squash; string lights and lamp pools breathe at night; boats bob; water glints |
 | hi-hat | leaves flutter |
 | bar | a wind gust through the leaves (bigger every 4 bars) |
 | chord | grade leans warm on major chords, cool on minor |
@@ -88,11 +88,27 @@ Keys: `M` mute, `H` hide HUD, `F` fullscreen.
 
 ## Characters
 
-Rooftop residents are hand-painted gouache cut-outs in `public/sprites/`, listed in `src/world/cast.ts`.
-They were generated with Krea 2 Turbo and the `ilkerzgi/krea-2-bold-gouache-urban-sketch-lora` style LoRA
-(`tools/sprites/generate.py`), then cut out with `tools/sprites/cutout.py`. To add one, cut out a
-transparent image (feet at the bottom), put it in `public/sprites/`, and add an entry to `CAST`.
-Generate the whole cast in one pass on one backend so the style stays consistent.
+Residents are procedural, built from the same toon primitives, brush grain and ink outlines as the city
+(`src/world/characters.ts`): bears, bunnies, cats, foxes, sheep, frogs and raccoons in random outfits,
+hats, scarves, headphones and glasses, standing or sitting.
+
+They animate on the GPU. Every part is tagged with a bone (body, head, left arm, right arm) plus its
+pivot, and the character shader in `src/world/materials.ts` poses them from the beat clock, so dozens of
+characters cost nothing per frame on the CPU:
+
+| Activity | Animation |
+| --- | --- |
+| listen | headphones on, strong head nods on the beat, swaying every two beats |
+| read | head bowed over a book, the odd page turn |
+| sip | lifts the mug to drink every so often |
+| paint | brush arm strokes at an easel, sun hat on |
+| strum | ukulele strummed on the eighth notes |
+| wave | arm raised and waving in time |
+| row | oars in the rowing boats |
+| idle | arms sway, head bobs |
+
+Everyone squashes slightly on the beat. `tools/sprites/` still holds the earlier image-generation and
+cut-out scripts from the painted-sprite experiment.
 
 ## Mobile
 
