@@ -18,7 +18,7 @@ export interface CastMember {
 }
 
 export const CAST: readonly CastMember[] = [
-  { id: 'bear-read', pose: 'sit', width: 425, height: 512, worldHeight: 3.0, bounce: 0.45 },
+  { id: 'bear-read', pose: 'sit', width: 449, height: 512, worldHeight: 3.0, bounce: 0.45 },
   { id: 'bunny-paint', pose: 'stand', width: 429, height: 512, worldHeight: 3.3, bounce: 0.5 },
   { id: 'cat-stand', pose: 'stand', width: 289, height: 512, worldHeight: 3.3, bounce: 1 },
   { id: 'sheep-sit', pose: 'sit', width: 391, height: 512, worldHeight: 2.8, bounce: 1.2 },
