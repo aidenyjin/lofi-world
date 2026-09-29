@@ -23,7 +23,7 @@ button { font: inherit; color: var(--ink); cursor: pointer; touch-action: manipu
 .card button:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
 #hud {
   position: fixed; left: max(16px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
-  display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; max-width: calc(100vw - 220px);
+  display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; max-width: calc(100vw - 130px);
   font: 12px/1.3 ui-monospace, monospace; color: var(--ink); opacity: 0.6; pointer-events: none;
 }
 #controls {
@@ -37,17 +37,3 @@ button { font: inherit; color: var(--ink); cursor: pointer; touch-action: manipu
 }
 #controls button[hidden] { display: none; }
 #controls button.on { background: var(--ink); color: var(--cream); }
-#browse-help {
-  position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-  font: 12px/1.3 ui-monospace, monospace; color: var(--cream); background: rgba(59, 42, 58, 0.7);
-  padding: 6px 12px; border-radius: 999px; pointer-events: none; display: none;
-  max-width: calc(100vw - 32px); text-align: center;
-}
-#toast {
-  position: fixed; left: 50%; bottom: max(64px, calc(env(safe-area-inset-bottom) + 56px)); transform: translateX(-50%);
-  font: 12px/1.3 ui-monospace, monospace; color: var(--cream); background: rgba(59, 42, 58, 0.7);
-  padding: 6px 12px; border-radius: 999px; pointer-events: none; opacity: 0; transition: opacity 0.3s;
-}
-#toast.show { opacity: 1; }
-body.browsing #browse-help { display: block; }
-body.browsing #scene { cursor: grab; }

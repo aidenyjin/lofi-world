@@ -9,7 +9,7 @@ import { CANAL_Z, TRAM_STREET, BUS_STREET, CHUNK_W } from './city';
 // then as if at a stop. Trains run on both tracks of the curved viaduct.
 
 const AHEAD = 320;
-const BEHIND = 70;
+const BEHIND = 25; // the camera never looks back
 
 type Kind = 'car' | 'van' | 'bus' | 'tram' | 'taxi';
 

@@ -19,9 +19,8 @@ export interface WorldOptions {
   dayLength: number;
 }
 
-// Camera "shots". The camera always travels forward (+X) through the city;
-// the viewer picks the shot (view button or keys 1-3) and the camera eases
-// across to it. The music never changes the view on its own.
+// The camera: one street-level ride, always travelling forward (+X) through
+// the city down the corridor. Only what that camera can see is built in detail.
 interface Shot {
   height: number;
   lateral: number; // camera z
@@ -33,18 +32,13 @@ interface Shot {
   speed: number; // travel speed, units/s
 }
 
-export type ShotName = 'canal' | 'rooftops' | 'vista';
 
 const DISTRICT_LIFT: Record<District, number> = { canal: 0, street: -0.35, market: -0.3, park: -0.1 };
 
-const SHOTS: Record<ShotName, Shot> = {
+const SHOTS = {
   // Gliding down the canal at boat height, under string lights and bridges.
   canal: { height: 3.6, lateral: CANAL_Z, ahead: 30, lookY: 2.8, lookZ: CANAL_Z, focus: 20, aperture: 0.45, speed: 3.2 },
-  // A drone flight over the rooftops, looking ahead along the canal.
-  rooftops: { height: 24, lateral: CANAL_Z + 7, ahead: 38, lookY: 5, lookZ: CANAL_Z - 9, focus: 40, aperture: 0.6, speed: 4 },
-  // High and far: the city rolling toward the horizon, the train overtaking.
-  vista: { height: 34, lateral: CANAL_Z + 14, ahead: 90, lookY: 10, lookZ: CANAL_Z - 26, focus: 85, aperture: 0.75, speed: 5 },
-};
+} satisfies Record<string, Shot>;
 
 function damp(current: number, target: number, rate: number, dt: number): number {
   return target + (current - target) * Math.exp(-rate * dt);
@@ -152,7 +146,6 @@ export class World {
     this.listen();
     this.resize();
     window.addEventListener('resize', () => this.resize());
-    this.browseListeners();
   }
 
   private listen() {
@@ -202,25 +195,6 @@ export class World {
     }
   }
 
-  private shotLocked = false;
-  view: ShotName = 'canal';
-
-  /** Ease the camera across to a chosen view. */
-  setView(name: ShotName) {
-    if (this.shotLocked) return;
-    this.view = name;
-    this.shotTarget = SHOTS[name];
-    this.shotSpeed = 0.6;
-  }
-
-  /** For screenshots/debugging: jump straight to a named shot. */
-  snapShot(name: ShotName) {
-    this.shotLocked = true;
-    this.view = name;
-    this.shotTarget = SHOTS[name];
-    this.shot = { ...SHOTS[name] };
-  }
-
   /**
    * Never let the camera pass through the viaduct, a platform or a train:
    * near the line, push it above the trains or below the deck.
@@ -233,79 +207,6 @@ export class World {
     const lo = top - DECK_H - 1.5;
     const hi = top + 4.6;
     if (p.y > lo && p.y < hi) p.y = p.y > (lo + hi) / 2 || lo < 1 ? hi : lo;
-  }
-
-  // ---- Browse mode: fly the camera yourself ---------------------------------
-  browse = false;
-  private browseState = { pos: new THREE.Vector3(), yaw: 0, pitch: -0.15, speed: 10 };
-  private keys = new Set<string>();
-  private drag: { x: number; y: number; id: number } | null = null;
-  /** Touch points down on the canvas; two or more fly forward (phones have no keys). */
-  private touches = new Set<number>();
-
-  setBrowse(on: boolean) {
-    if (on === this.browse) return;
-    this.browse = on;
-    const b = this.browseState;
-    if (on) {
-      b.pos.copy(this.camera.position);
-      const dir = this.lookTarget.clone().sub(this.camera.position).normalize();
-      b.yaw = Math.atan2(-dir.z, dir.x);
-      b.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -0.99, 0.99));
-    } else {
-      // Carry on the journey from wherever you flew to.
-      this.camX = b.pos.x;
-    }
-  }
-
-  private browseListeners() {
-    const el = this.renderer.domElement;
-    addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
-    addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
-    addEventListener('blur', () => this.keys.clear());
-    el.addEventListener('pointerdown', (e) => {
-      if (!this.browse) return;
-      if (!this.drag) this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
-      if (e.pointerType === 'touch') this.touches.add(e.pointerId);
-      el.setPointerCapture(e.pointerId);
-    });
-    el.addEventListener('pointermove', (e) => {
-      if (!this.browse || !this.drag || e.pointerId !== this.drag.id) return;
-      const b = this.browseState;
-      b.yaw -= (e.clientX - this.drag.x) * 0.004;
-      b.pitch = THREE.MathUtils.clamp(b.pitch - (e.clientY - this.drag.y) * 0.004, -1.45, 1.45);
-      this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
-    });
-    const release = (e: PointerEvent) => {
-      this.touches.delete(e.pointerId);
-      if (this.drag?.id === e.pointerId) this.drag = null;
-    };
-    el.addEventListener('pointerup', release);
-    el.addEventListener('pointercancel', release);
-    el.addEventListener('wheel', (e) => {
-      if (!this.browse) return;
-      this.browseState.speed = THREE.MathUtils.clamp(this.browseState.speed * (e.deltaY > 0 ? 0.85 : 1.18), 2, 80);
-    }, { passive: true });
-  }
-
-  private updateBrowse(dt: number) {
-    const b = this.browseState;
-    const k = this.keys;
-    const fwd = new THREE.Vector3(Math.cos(b.yaw) * Math.cos(b.pitch), Math.sin(b.pitch), -Math.sin(b.yaw) * Math.cos(b.pitch));
-    const right = new THREE.Vector3(Math.sin(b.yaw), 0, Math.cos(b.yaw));
-    const move = new THREE.Vector3();
-    if (k.has('w') || k.has('arrowup') || this.touches.size >= 2) move.add(fwd);
-    if (k.has('s') || k.has('arrowdown')) move.sub(fwd);
-    if (k.has('d') || k.has('arrowright')) move.add(right);
-    if (k.has('a') || k.has('arrowleft')) move.sub(right);
-    if (k.has('e') || k.has(' ')) move.y += 1;
-    if (k.has('q') || k.has('control')) move.y -= 1;
-    const fast = k.has('shift') ? 3 : 1;
-    if (move.lengthSq() > 0) b.pos.addScaledVector(move.normalize(), b.speed * fast * dt);
-    b.pos.y = Math.max(0.8, b.pos.y);
-    this.camX = b.pos.x;
-    this.camera.position.copy(b.pos);
-    this.lookTarget.copy(b.pos).add(fwd);
   }
 
   /** Start the journey somewhere else along the city. */
@@ -337,9 +238,16 @@ export class World {
     this.post.setSize(size.x, size.y);
   }
 
+  private canalInView(): boolean {
+    for (let i = Math.floor((this.camX - 4) / CHUNK_W); i <= Math.floor((this.camX + 380) / CHUNK_W); i++) {
+      if (districtAt(this.opts.seed, i) === 'canal') return true;
+    }
+    return false;
+  }
+
   private updateChunks(all = false) {
-    // Mostly ahead of the camera: that's where it's heading.
-    const from = Math.floor((this.camX - 45) / CHUNK_W);
+    // Only ahead: the street camera always looks forward, so nothing behind it is ever in view.
+    const from = Math.floor((this.camX - 4) / CHUNK_W);
     const to = Math.floor((this.camX + 330) / CHUNK_W);
     let built = 0;
     for (let i = from; i <= to; i++) {
@@ -354,7 +262,7 @@ export class World {
       }
     }
     for (const [key, c] of this.chunks) {
-      if (c.index < from - 1 || c.index > to + 1) {
+      if (c.index < from || c.index > to + 1) {
         c.dispose();
         this.chunks.delete(key);
       }
@@ -379,7 +287,7 @@ export class World {
     const g = this.shotTarget;
     const r = this.shotSpeed;
     s.speed = damp(s.speed, g.speed, r, dt);
-    if (!this.browse) this.camX += s.speed * dt;
+    this.camX += s.speed * dt;
     s.height = damp(s.height, g.height, r, dt);
     s.lateral = damp(s.lateral, g.lateral, r, dt);
     s.ahead = damp(s.ahead, g.ahead, r, dt);
@@ -411,7 +319,6 @@ export class World {
     this.railLift = damp(this.railLift, need, need > this.railLift ? 4 : 0.8, dt);
     this.camera.position.y += this.railLift;
     this.keepClearOfRailway(this.camera.position);
-    if (this.browse) this.updateBrowse(dt);
     if (this.debugCam) {
       const [cx, cy, cz, tx, ty, tz] = this.debugCam;
       this.camera.position.set(this.camX + cx, cy, cz);
@@ -427,7 +334,8 @@ export class World {
     this.hemi.intensity = p.hemiIntensity;
     this.sun.color.copy(p.sun);
     this.sun.intensity = p.sunIntensity;
-    const focusPoint = new THREE.Vector3(this.camX + 40, 0, CANAL_Z - 8);
+    // Centre the shadow map on the stretch ahead that the street camera sees up close.
+    const focusPoint = new THREE.Vector3(this.camX + 55, 0, CANAL_Z);
     this.sun.target.position.copy(focusPoint);
     this.sun.position.copy(focusPoint).addScaledVector(this.sunDir, 150);
     (this.scene.fog as THREE.Fog).color.copy(p.haze);
@@ -454,6 +362,8 @@ export class World {
     this.particles.update(dt, this.camX, chimneys, fountains, this.leaves.wind, p.nightness, p.haze, this.renderer.domElement.height);
     this.fireflies.update(t, this.camX, p.nightness, this.beatPulse);
     this.water.update(this.camX, p, t, this.beatPulse);
+    // The reflection re-renders the whole scene: only when there's canal water in view.
+    this.water.mesh.visible = this.canalInView();
 
     // --- Post ---------------------------------------------------------------
     this.post.update(this.camera, p, t, this.sunDir);

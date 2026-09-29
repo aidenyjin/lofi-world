@@ -99,6 +99,8 @@ function welded(g: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 const BLOB = welded(new THREE.IcosahedronGeometry(1, 1));
 const BULB = welded(new THREE.IcosahedronGeometry(1, 0));
+/** Low-poly blob for tiny details (flowers, fruit, ivy clumps): at their size the extra facets never show. */
+const SPECK = BULB;
 const CYL8 = new THREE.CylinderGeometry(1, 1, 1, 8);
 const TORUS = new THREE.TorusGeometry(1, 0.18, 6, 16);
 const VAULT = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true, -Math.PI / 2, Math.PI);
@@ -343,6 +345,33 @@ export class CityChunk {
   private frontage = new Map<number, [number, number][]>();
   private kerbQueue: { row: number; x: number; half: number; fn: (x: number) => void }[] = [];
   private curRow = 0;
+  /** Street-facing building fronts per row: [x0, x1, height]. */
+  private rowWalls = new Map<number, [number, number, number][]>();
+  /**
+   * While building a lot: the height up to which the rows in front hide it
+   * from the street camera. Anything entirely below it is never seen, so it
+   * isn't built.
+   */
+  private hide = 0;
+
+  /**
+   * How high the rows in front of `row` screen the stretch x0..x1 from the
+   * corridor. The camera is always below roof level, so a low point behind a
+   * row is only visible through a gap in it (avenue, park, low building); the
+   * margin catches the oblique views through gaps a little to one side.
+   */
+  private cover(row: number, x0: number, x1: number): number {
+    if (row <= 1) return 0;
+    let c = Infinity;
+    for (let x = x0 - 4; x <= x1 + 4; x += 0.5) {
+      let h = 0;
+      for (let r = 1; r < row; r++) for (const [a, b, hh] of this.rowWalls.get(r) ?? []) if (x >= a && x <= b) h = Math.max(h, hh);
+      c = Math.min(c, h);
+      if (c === 0) return 0;
+    }
+    return c === Infinity ? 0 : c;
+  }
+
   /** Row-1 building fronts facing the corridor: [x0, x1, front z]. */
   private row1Walls: [number, number, number][] = [];
 
@@ -396,7 +425,6 @@ export class CityChunk {
 
     this.ground(b);
     this.corridor(rng, b);
-    this.streets(rng, b);
 
     const lastRow = this.mirrored ? ROWS - 2 : ROWS - 1;
     // One landmark per neighbourhood run, midway through it, on the main bank.
@@ -417,8 +445,10 @@ export class CityChunk {
           const facesStreet = i === 0;
           const roll = rng.next();
           const rail = this.railLimit(x, x + w, z - d, z);
+          this.hide = this.cover(row, x, x + w);
           if (rail !== null && rail < 4.5 + FLOOR) {
             this.railside(rng, b, lotCx, lotCz, w, d);
+            this.hide = 0;
             z -= d;
             return;
           }
@@ -433,12 +463,15 @@ export class CityChunk {
           } else {
             this.building(rng, b, row, lotCx, lotCz, w - rng.range(0.1, 0.6), d - rng.range(0.1, 0.5), facesStreet);
           }
+          this.hide = 0;
           z -= d;
         });
         x += w;
       }
     }
 
+    // Streets go in after the lots: what's on them depends on what the lots hide.
+    this.streets(rng, b);
     this.flushKerb();
     if (this.district === 'canal') this.canalLanterns(rng, b);
     this.powerLines(rng, b);
@@ -570,7 +603,7 @@ export class CityChunk {
         this.fountains.push(new THREE.Vector3(fx + this.x0, 1.4, zc));
       }
       ink.box(CHUNK_W / 2, 0.3, half0 + 0.35, CHUNK_W + 0.02, 0.6, 0.6, '#8fb98a', 0, false);
-      for (let x = 1; x < CHUNK_W; x += 1.3) ink.fill.geometry(BLOB, mat(x, 0.7, half0 + 0.4, 0.3, 0.24, 0.3), rng.pick(FLOWERS));
+      for (let x = 1; x < CHUNK_W; x += 1.3) ink.fill.geometry(SPECK, mat(x, 0.7, half0 + 0.4, 0.3, 0.24, 0.3), rng.pick(FLOWERS));
       for (let x = rng.range(1, 3); x < CHUNK_W - 1; x += 5) {
         const sc = rng.range(0.9, 1.05);
         const tr = new Rng(rng.int(0, 1e9));
@@ -617,10 +650,10 @@ export class CityChunk {
     ink.geometry(BLOB, mat(x - 0.2, 1.75, z, 0.32, 0.34, 0.34), stone); // mane
     ink.fill.geometry(BLOB, mat(x - 0.42, 1.72, z, 0.16, 0.16, 0.2), stone); // muzzle
     for (const dz of [-0.13, 0.13]) {
-      ink.fill.geometry(BLOB, mat(x - 0.5, 1.8, z + dz, 0.04, 0.04, 0.04), '#3b2a3a'); // eyes
-      ink.fill.geometry(BLOB, mat(x - 0.3, 0.98, z + dz, 0.1, 0.1, 0.1), stone); // paws
+      ink.fill.geometry(SPECK, mat(x - 0.5, 1.8, z + dz, 0.04, 0.04, 0.04), '#3b2a3a'); // eyes
+      ink.fill.geometry(SPECK, mat(x - 0.3, 0.98, z + dz, 0.1, 0.1, 0.1), stone); // paws
     }
-    ink.fill.geometry(BLOB, mat(x - 0.45, 1.05, z, 0.14, 0.14, 0.14), '#e6dbd0'); // ball under a paw
+    ink.fill.geometry(SPECK, mat(x - 0.45, 1.05, z, 0.14, 0.14, 0.14), '#e6dbd0'); // ball under a paw
   }
 
   private canal(rng: Rng, b: Builders) {
@@ -762,11 +795,17 @@ export class CityChunk {
           ink.box(x, 2.9, zF + STREET - 0.3, 0.14, 5.8, 0.14, '#6b5c78');
           ink.box(x, 5.55, cz + 0.3, 0.08, 0.08, 4.0, '#6b5c78', 0, false);
         }
-        if (rng.chance(0.5)) this.shelter(rng, b, rng.range(8, CHUNK_W - 4), zF + STREET - 0.55, 'TRAM');
+        if (rng.chance(0.5)) {
+          const sx = rng.range(8, CHUNK_W - 4);
+          if (this.cover(row, sx - 1.3, sx + 1.3) < 2.8) this.shelter(rng, b, sx, zF + STREET - 0.55, 'TRAM');
+        }
       } else {
         // Dashed centre line
         for (let x = AVENUE_W + 0.8; x < CHUNK_W - 0.5; x += 2.4) ink.fill.quad(x, 0.02, cz, 1.1, 0.12, 'py', '#f3e7c9');
-        if (row === 3 && !this.mirrored && rng.chance(0.55)) this.shelter(rng, b, rng.range(8, CHUNK_W - 4), zF + STREET - 0.55, 'BUS');
+        if (row === 3 && !this.mirrored && rng.chance(0.55)) {
+          const sx = rng.range(8, CHUNK_W - 4);
+          if (this.cover(row, sx - 1.3, sx + 1.3) < 2.8) this.shelter(rng, b, sx, zF + STREET - 0.55, 'BUS');
+        }
       }
       // Zebra crossing next to the avenue (painted rainbow in the arts quarter)
       const rainbow = this.hood.name === 'arts';
@@ -776,15 +815,24 @@ export class CityChunk {
       if (row === 4) continue; // barely visible; keep it light
       // Lamps and trees along the far kerb (in front of the row's facades)
       const lampX = rng.range(6, 10);
-      for (let x = lampX; x < CHUNK_W - 1; x += 9) this.kerb(row, x, 0.3, (kx) => this.lampPost(b, kx, zF + 0.72, 0.16, true));
+      // (Behind the front rows these only show through gaps, or where they clear the rooftops.)
+      for (let x = lampX; x < CHUNK_W - 1; x += 9) {
+        this.kerb(row, x, 0.3, (kx) => {
+          if (this.cover(row, kx - 0.3, kx + 0.3) < 3.8) this.lampPost(b, kx, zF + 0.72, 0.16, true);
+        });
+      }
       for (let x = lampX + 4.5; x < CHUNK_W - 1; x += 9) {
         if (!rng.chance(0.6)) continue;
         const sc = rng.range(0.85, 1.05);
         const tr = new Rng(rng.int(0, 1e9));
-        this.kerb(row, x, 0.8, (kx) => this.streetTree(tr, b, kx, 0.16, zF + 0.7, sc));
+        this.kerb(row, x, 0.8, (kx) => {
+          if (this.cover(row, kx - 0.8, kx + 0.8) < 4.6) this.streetTree(tr, b, kx, 0.16, zF + 0.7, sc);
+        });
       }
       // Furniture on the near kerb
-      for (let x = AVENUE_W + 2; x < CHUNK_W - 1; x += rng.range(3, 6)) this.furniture(rng, b, x, zF + STREET - 0.45);
+      for (let x = AVENUE_W + 2; x < CHUNK_W - 1; x += rng.range(3, 6)) {
+        if (this.cover(row, x - 0.8, x + 0.8) < 1.5) this.furniture(rng, b, x, zF + STREET - 0.45);
+      }
       // Bunting or lights across the street
       if (rng.chance(0.55)) {
         const x = rng.range(8, CHUNK_W - 4);
@@ -847,7 +895,7 @@ export class CityChunk {
       ink.fill.box(x, y + 2.52, z - 0.14, 0.04, 0.04, 0.3, '#4a3a48');
       for (let k = 0; k < 5; k++) {
         const a = (k / 5) * Math.PI * 2;
-        ink.fill.geometry(BLOB, mat(x + Math.cos(a) * 0.2, y + 2.38 - (k % 2) * 0.12, z - 0.28 + Math.sin(a) * 0.2, 0.12, 0.12, 0.12), FLOWERS[(k + Math.round(x)) % FLOWERS.length]);
+        ink.fill.geometry(SPECK, mat(x + Math.cos(a) * 0.2, y + 2.38 - (k % 2) * 0.12, z - 0.28 + Math.sin(a) * 0.2, 0.12, 0.12, 0.12), FLOWERS[(k + Math.round(x)) % FLOWERS.length]);
       }
     } else if (hood === 'chinatown') {
       b.emissive.geometry(BLOB, mat(x, y + 2.4, z - 0.25, 0.17, 0.22, 0.17), '#e8503a');
@@ -866,7 +914,7 @@ export class CityChunk {
     } else if (r < 0.32) {
       // Fire hydrant
       ink.geometry(CYL, mat(x, y + 0.3, z, 0.14, 0.6, 0.14), '#e9544f');
-      ink.fill.geometry(BLOB, mat(x, y + 0.62, z, 0.15, 0.12, 0.15), '#e9544f');
+      ink.fill.geometry(SPECK, mat(x, y + 0.62, z, 0.15, 0.12, 0.15), '#e9544f');
     } else if (r < 0.44) {
       // Post box
       ink.box(x, y + 0.5, z, 0.45, 1.0, 0.4, '#6fa7e0');
@@ -874,7 +922,7 @@ export class CityChunk {
     } else if (r < 0.6) {
       // Planter with flowers
       ink.box(x, y + 0.25, z, 1.2, 0.5, 0.5, '#b77a64');
-      for (let i = 0; i < 5; i++) ink.fill.geometry(BLOB, mat(x - 0.45 + i * 0.22, y + 0.6, z + rng.range(-0.1, 0.1), 0.14, 0.12, 0.14), rng.pick(FLOWERS));
+      for (let i = 0; i < 5; i++) ink.fill.geometry(SPECK, mat(x - 0.45 + i * 0.22, y + 0.6, z + rng.range(-0.1, 0.1), 0.14, 0.12, 0.14), rng.pick(FLOWERS));
     } else if (r < 0.7) {
       // Bin
       ink.geometry(CYL, mat(x, y + 0.35, z, 0.22, 0.7, 0.22), '#8fb0a0');
@@ -990,6 +1038,11 @@ export class CityChunk {
     const detailed = row <= 3;
     this.curRow = facesStreet ? row : -1;
     if (row === 1 && facesStreet) this.row1Walls.push([cx - w / 2, cx + w / 2, front]);
+    if (facesStreet) {
+      let walls = this.rowWalls.get(row);
+      if (!walls) this.rowWalls.set(row, (walls = []));
+      walls.push([cx - w / 2, cx + w / 2, h]);
+    }
 
     ink.surface = hood.surface === Surf.Plaster && rng.chance(0.2) ? Surf.Brick : hood.surface;
     ink.box(cx, h / 2, cz, w, h, d, wall);
@@ -1015,7 +1068,7 @@ export class CityChunk {
     const shop = facesStreet && row >= 1 && row <= 3 && rng.chance(hood.shopChance);
     // Row 1 faces the corridor: market stalls stand where an awning would go.
     const stallsInFront = row === 1 && this.district === 'market';
-    if (shop) this.shopfront(rng, b, cx, front, w, accent, row !== 1 || this.district === 'street', !stallsInFront);
+    if (shop && this.hide < 3.9) this.shopfront(rng, b, cx, front, w, accent, row !== 1 || this.district === 'street', !stallsInFront);
     // Decide what hangs off the upper facade first, so nothing shares the same spot.
     const escape = floors >= 3 && rng.chance(0.25);
     const fw = Math.min(w * 0.55, 4);
@@ -1026,10 +1079,10 @@ export class CityChunk {
     const keepOut: [number, number][] = [];
     if (escape) keepOut.push([fx - fw / 2 - 0.3, fx + fw / 2 + 0.3]);
     if (blade) keepOut.push([bladeX - 0.9, bladeX + 0.9]);
-    this.windows(rng, b, cx, cz, w, d, floors, trim, accent, shop, detailed, keepOut);
+    this.windows(rng, b, cx, cz, w, d, floors, trim, accent, shop, detailed, keepOut, facesStreet);
     if (facesStreet) for (const [a, c] of keepOut) this.blockFront(a, c);
 
-    if (this.hood.ivy && rng.chance(0.55)) this.ivy(rng, b, cx, front, w, h);
+    if (this.hood.ivy && facesStreet && rng.chance(0.55)) this.ivy(rng, b, cx, front, w, h);
     if (this.hood.murals && floors >= 2 && rng.chance(0.55)) this.mural(rng, b, cx, cz, w, d, h);
     if (this.hood.festoon === 'neon' && rng.chance(0.6)) {
       // Neon strip tracing the cornice
@@ -1038,8 +1091,9 @@ export class CityChunk {
       if (floors >= 3) b.emissive.box(cx, FLOOR * 2 + 0.1, front + 0.05, w - 0.2, 0.06, 0.06, rng.pick(this.hood.accents));
     }
     if (escape) this.fireEscape(b, fx, fw, front, floors);
-    if (blade) this.neonBlade(rng, b, bladeX, front, floors);
+    if (blade && FLOOR + 0.6 + Math.min(3.6, (floors - 1) * FLOOR) > this.hide) this.neonBlade(rng, b, bladeX, front, floors);
 
+    this.hide = 0;
     this.rooftop(rng, b, roofStyle, cx, cz, w, d, h, wall, trim);
   }
 
@@ -1117,7 +1171,7 @@ export class CityChunk {
 
   private windows(
     rng: Rng, b: Builders, cx: number, cz: number, w: number, d: number, floors: number,
-    trim: string, accent: string, shop: boolean, detailed: boolean, keepOut: [number, number][] = [],
+    trim: string, accent: string, shop: boolean, detailed: boolean, keepOut: [number, number][] = [], front = true,
   ) {
     const { ink } = b;
     const litChance = rng.range(0.25, 0.6);
@@ -1135,6 +1189,7 @@ export class CityChunk {
         const y = f * FLOOR + 1.55;
         for (let c = 0; c < cols; c++) {
           if (rng.chance(0.06)) continue;
+          if (y + wh / 2 + 0.25 < this.hide) continue; // screened by the rows in front
           const o = -span / 2 + gap * (c + 0.5);
           const isLit = rng.chance(litChance);
           const glass = windowColor(rng.next(), isLit ? (rng.chance(0.08) ? 'tv' : 'lit') : 'dark');
@@ -1168,7 +1223,7 @@ export class CityChunk {
               b.emissive.geometry(BLOB, mat(x + ww / 2 + 0.3, y + wh / 2 - 0.3, z + 0.38, 0.15, 0.2, 0.15), '#e8503a');
             } else if (flowerBoxes && rng.chance(0.3)) {
               ink.box(x, y - wh / 2 - 0.3, z + 0.2, ww + 0.1, 0.26, 0.3, '#b77a64');
-              for (let k = 0; k < 4; k++) ink.fill.geometry(BLOB, mat(x - 0.35 + k * 0.23, y - wh / 2 - 0.1, z + 0.22, 0.12, 0.12, 0.12), rng.pick(k % 2 ? FLOWERS : FOLIAGE));
+              for (let k = 0; k < 4; k++) ink.fill.geometry(SPECK, mat(x - 0.35 + k * 0.23, y - wh / 2 - 0.1, z + 0.22, 0.12, 0.12, 0.12), rng.pick(k % 2 ? FLOWERS : FOLIAGE));
             }
           } else {
             const sgn = facing === 'px' ? 1 : -1;
@@ -1179,7 +1234,8 @@ export class CityChunk {
         }
       }
     };
-    place('pz', w);
+    // A back lot's front only faces the back wall of the lot in front of it.
+    if (front) place('pz', w);
     if (detailed) {
       place('px', d);
       place('nx', d);
@@ -1195,10 +1251,11 @@ export class CityChunk {
       const px = cx + rng.range(-w / 2 + 0.5, w / 2 - 0.5);
       const top = rng.range(h * 0.35, h * 0.95);
       for (let y = 0.3; y < top; y += 0.45) {
+        if (y + 0.5 < this.hide) continue;
         const spread = 0.4 + (1 - y / top) * 0.6;
         for (let k = 0; k < 2; k++) {
           const r = rng.range(0.25, 0.45);
-          ink.fill.geometry(BLOB, mat(px + rng.range(-spread, spread), y, front + 0.08, r, r, 0.14), rng.pick(['#6f9a6a', '#8bb87a', '#5f8a5c', '#9fc48a']));
+          ink.fill.geometry(SPECK, mat(px + rng.range(-spread, spread), y, front + 0.08, r, r, 0.14), rng.pick(['#6f9a6a', '#8bb87a', '#5f8a5c', '#9fc48a']));
         }
       }
     }
@@ -1209,6 +1266,7 @@ export class CityChunk {
   private mural(rng: Rng, b: Builders, cx: number, cz: number, w: number, d: number, h: number) {
     const side = rng.chance(0.5) ? 'nx' : 'px';
     const size = Math.min(d - 1, h - 1.2, 7);
+    if (0.7 + size < this.hide) return;
     const x = cx + (side === 'px' ? w / 2 + 0.07 : -w / 2 - 0.07);
     b.signs.quad(x, 0.7 + size / 2, cz + rng.range(-(d - size) / 2 + 0.3, (d - size) / 2 - 0.3), size, size, side, '#ffffff', this.signUV(rng.pick(this.mats.atlas.murals)));
   }
@@ -1228,7 +1286,7 @@ export class CityChunk {
     if (rng.chance(0.6)) {
       const px = x + rng.range(-bw / 3, bw / 3);
       ink.geometry(CYL, mat(px, y + 0.2, z + 0.4, 0.14, 0.28, 0.14), '#d98a6a');
-      ink.fill.geometry(BLOB, mat(px, y + 0.5, z + 0.4, 0.26, 0.3, 0.26), rng.pick(['#8bc36a', '#9fd49a', ...FOLIAGE]));
+      ink.fill.geometry(SPECK, mat(px, y + 0.5, z + 0.4, 0.26, 0.3, 0.26), rng.pick(['#8bc36a', '#9fd49a', ...FOLIAGE]));
     }
   }
 
@@ -1252,6 +1310,7 @@ export class CityChunk {
     const { ink } = b;
     for (let f = 1; f < floors; f++) {
       const y = f * FLOOR + 0.2;
+      if (y + FLOOR * 1.1 < this.hide) continue;
       ink.box(fx, y, front + 0.5, fw, 0.1, 1, RUST);
       ink.box(fx, y + 0.5, front + 1, fw, 0.06, 0.06, RUST, 0, false);
       for (let rx = -fw / 2; rx <= fw / 2 + 0.01; rx += fw / 4) {
@@ -1292,7 +1351,7 @@ export class CityChunk {
       for (let i = 0; i < rng.int(1, 2); i++) {
         const p = occ.place(rng, 1.7, 1.7);
         if (!p) continue;
-        ink.box(p.x, roofY + 0.3, p.z, 1.4, 0.6, 1.4, '#b77a64');
+        if (h < 4.5) ink.box(p.x, roofY + 0.3, p.z, 1.4, 0.6, 1.4, '#b77a64'); // planter: hidden by the parapet on anything taller
         this.tree(rng, b, p.x, roofY + 0.6, p.z, rng.range(0.5, 0.7));
       }
       if (w > 4) {
@@ -1324,12 +1383,15 @@ export class CityChunk {
         b.dark.quad(p.x, roofY + 0.85, p.z + 1.11, 0.9, 1.7, 'pz', '#6a5a7a');
       }
     }
+    // Roof clutter that never clears the parapet is only built on low buildings the camera can see over.
+    const low = h < 4.5;
     if (w > 4.5 && rng.chance(0.15)) {
       const n = Math.min(4, Math.floor((usable.x1 - usable.x0) / 1.4));
       const p = occ.place(rng, n * 1.4, 1.3, true);
       if (p) {
         for (let i = 0; i < n; i++) {
           const px = p.x - (n * 1.4) / 2 + 0.7 + i * 1.4;
+          if (!low) continue;
           ink.boxRot(P.set(px, roofY + 0.45, p.z), eul.set(-0.5, 0, 0), S.set(1.25, 0.06, 1.0), '#5b6fb0');
           ink.fill.box(px, roofY + 0.2, p.z - 0.2, 0.06, 0.4, 0.06, METAL);
         }
@@ -1348,6 +1410,7 @@ export class CityChunk {
     for (let i = 0; i < (rng.chance(0.5) ? rng.int(1, 3) : 0); i++) {
       const p = occ.place(rng, 1.3, 1.1);
       if (!p) break;
+      if (!low) continue;
       ink.box(p.x, roofY + 0.4, p.z, 1.1, 0.8, 0.9, METAL);
       ink.fill.geometry(CYL, mat(p.x, roofY + 0.81, p.z, 0.35, 0.02, 0.35), '#6d6883');
     }
@@ -1362,6 +1425,7 @@ export class CityChunk {
       for (let i = 0; i < rng.int(1, 3); i++) {
         const p = occ.place(rng, 1.3, 1.0);
         if (!p) break;
+        if (!low) continue;
         ink.box(p.x, roofY + 0.12, p.z, 1.1, 0.2, 0.8, trim);
         b.dark.quad(p.x, roofY + 0.23, p.z, 0.9, 0.6, 'py', '#bcd8ff');
       }
@@ -1545,7 +1609,8 @@ export class CityChunk {
     ink.box(cx, 0.35, cz + d / 2 - 0.3, w - 0.2, 0.3, 0.3, CONCRETE);
     // The centre of the cross: fountain, sculpture, or bandstand
     const centre = rng.next();
-    if (w > 4.5 && d > 4.5 && centre < 0.55 && occ.reserve(cx, cz, 3.0, 3.0)) {
+    const hidden = this.hide; // things shorter than this are screened by the rows in front
+    if (w > 4.5 && d > 4.5 && centre < 0.55 && occ.reserve(cx, cz, 3.0, 3.0) && hidden < 1.9) {
       ink.geometry(CYL, mat(cx, 0.55, cz, 1.4, 0.5, 1.4), STONE);
       b.water.geometry(CYL, mat(cx, 0.78, cz, 1.25, 0.02, 1.25), '#ffffff');
       ink.geometry(CYL, mat(cx, 1.1, cz, 0.18, 1.1, 0.18), STONE);
@@ -1553,14 +1618,14 @@ export class CityChunk {
       this.fountains.push(new THREE.Vector3(cx + this.x0, 1.75, this.wz(cz)));
     } else if (hood === 'arts' && w > 4 && occ.reserve(cx, cz, 2.2, 2.2)) {
       this.sculpture(rng, b, cx, 0.3, cz);
-    } else if ((hood === 'parkland' || hood === 'oldtown') && w > 6 && d > 6 && occ.reserve(cx, cz, 4.2, 4.2)) {
+    } else if ((hood === 'parkland' || hood === 'oldtown') && w > 6 && d > 6 && occ.reserve(cx, cz, 4.2, 4.2) && hidden < 4.3) {
       this.bandstand(rng, b, cx, cz);
     }
     // Paths are reserved after the centrepiece so trees stay off them
     occ.reserve(cx, cz, 1.2, d);
     occ.reserve(cx, cz, w, 1.2);
     const green = hood === 'parkland' || hood === 'garden';
-    if (green && w > 5 && d > 5 && rng.chance(0.5)) {
+    if (green && w > 5 && d > 5 && rng.chance(0.5) && hidden < 3.4) {
       // Lily pond with a little gazebo, each in its own quadrant
       const pond = occ.place(rng, 3.9, 3.0, true);
       if (pond) {
@@ -1583,12 +1648,12 @@ export class CityChunk {
       }
     }
     // Flower beds in the garden quarter
-    if (hood === 'garden' || hood === 'parkland') {
+    if ((hood === 'garden' || hood === 'parkland') && hidden < 0.8) {
       for (let k = 0; k < 3; k++) {
         const bed = occ.place(rng, 1.6, 0.9);
         if (!bed) break;
         ink.box(bed.x, 0.42, bed.z, 1.6, 0.25, 0.9, '#b77a64');
-        for (let f = 0; f < 6; f++) ink.fill.geometry(BLOB, mat(bed.x - 0.6 + (f % 3) * 0.6, 0.62, bed.z + (f < 3 ? -0.2 : 0.2), 0.2, 0.16, 0.2), rng.pick(FLOWERS));
+        for (let f = 0; f < 6; f++) ink.fill.geometry(SPECK, mat(bed.x - 0.6 + (f % 3) * 0.6, 0.62, bed.z + (f < 3 ? -0.2 : 0.2), 0.2, 0.16, 0.2), rng.pick(FLOWERS));
       }
     }
     // Trees: canopies need ~2.4 units of room
@@ -1596,15 +1661,15 @@ export class CityChunk {
     for (let i = 0; i < n; i++) {
       const sc = rng.range(1.0, 1.35);
       const spot = occ.place(rng, 2.2 * sc, 2.0 * sc);
-      if (spot) this.tree(rng, b, spot.x, 0.3, spot.z, sc);
+      if (spot && 0.3 + 4.4 * sc > hidden) this.tree(rng, b, spot.x, 0.3, spot.z, sc);
     }
     // Bench facing the path, with a lamp
-    const bench = occ.reserve(cx + 1.4, cz + d / 2 - 1.3, 1.8, 0.8);
+    const bench = hidden < 1.4 && occ.reserve(cx + 1.4, cz + d / 2 - 1.3, 1.8, 0.8);
     if (bench) {
       ink.box(cx + 1.4, 0.75, cz + d / 2 - 1.2, 1.6, 0.12, 0.6, WOOD);
       ink.box(cx + 1.4, 1.1, cz + d / 2 - 1.5, 1.6, 0.5, 0.1, WOOD);
     }
-    if (occ.reserve(cx - 0.9, cz + d / 2 - 1.2, 0.4, 0.4) || bench) this.lampPost(b, cx - 0.9, cz + d / 2 - 1.2, 0.3, false);
+    if (hidden < 3.6 && (occ.reserve(cx - 0.9, cz + d / 2 - 1.2, 0.4, 0.4) || bench)) this.lampPost(b, cx - 0.9, cz + d / 2 - 1.2, 0.3, false);
   }
 
   /** One landmark per neighbourhood run, standing tall behind the first row so it reads from the corridor. */
@@ -1696,7 +1761,7 @@ export class CityChunk {
     y += 0.7;
     for (let k = 0; k < 5; k++) ink.fill.geometry(CYL8, mat(x, y + k * 0.35, z, 0.28 - k * 0.04, 0.12, 0.28 - k * 0.04), '#f4c95d');
     ink.fill.geometry(CYL6, mat(x, y + 1.2, z, 0.05, 2.4, 0.05), '#f4c95d');
-    ink.fill.geometry(BLOB, mat(x, y + 2.5, z, 0.18, 0.2, 0.18), '#f4c95d');
+    ink.fill.geometry(SPECK, mat(x, y + 2.5, z, 0.18, 0.2, 0.18), '#f4c95d');
   }
 
   private lighthouse(b: Builders, x: number, z: number) {
@@ -1835,7 +1900,7 @@ export class CityChunk {
     ink.surface = Surf.Tiles;
     ink.geometry(CONE8, mat(x, 3.5, z, r + 0.4, 1.3, r + 0.4), rng.pick(['#e9786f', '#57907a', '#6fa7e0']));
     ink.surface = Surf.Plain;
-    ink.fill.geometry(BLOB, mat(x, 4.25, z, 0.15, 0.15, 0.15), '#f6b94f');
+    ink.fill.geometry(SPECK, mat(x, 4.25, z, 0.15, 0.15, 0.15), '#f6b94f');
     this.sagLine(new THREE.Vector3(x - r, 2.9, z + r * 0.4), new THREE.Vector3(x + r, 2.9, z + r * 0.4), 0.25, [], b.bulbs, 0.07);
     for (const sx of [-0.5, 0.5]) ink.fill.box(x + sx, 1.2, z, 0.04, 0.9, 0.04, '#4a3a48');
   }
@@ -1852,6 +1917,7 @@ export class CityChunk {
       for (let k = 0; k < stack; k++) {
         const col = rng.pick(cols);
         const zc = cz + rng.range(-d / 4, d / 4);
+        if (0.1 + 1.3 * (k + 1) < this.hide) continue;
         ink.box(x, 0.1 + 1.3 * k + 0.65, zc, 2.9, 1.3, Math.min(d - 1, 6), col);
         // Corrugation
         for (let r = -1.2; r <= 1.2; r += 0.3) ink.fill.box(x + r, 0.1 + 1.3 * k + 0.65, zc + Math.min(d - 1, 6) / 2 + 0.01, 0.06, 1.1, 0.02, '#4a3a48');
@@ -1873,6 +1939,7 @@ export class CityChunk {
     // Paved square with a tile grid
     ink.fill.box(cx, 0.06, cz, w - 0.2, 0.12, d - 0.2, '#ead9c8');
     for (let tx = cx - w / 2 + 1; tx < cx + w / 2 - 0.5; tx += 1) ink.fill.quad(tx, 0.125, cz, 0.04, d - 0.4, 'py', '#d6c2b2');
+    if (this.hide >= 3.6) return; // stalls and lights all screened by the rows in front
     const cols = Math.max(1, Math.floor((w - 0.8) / 2.7));
     const rows = Math.max(1, Math.min(3, Math.floor((d - 1) / 3.2)));
     const colW = (w - 0.4) / cols;
@@ -1933,7 +2000,7 @@ export class CityChunk {
           const px = cx0 + (cw / crates) * (i + 0.5);
           ink.box(px, top + 0.1, z + 0.3, cw / crates - 0.08, 0.2, 0.6, '#d9b08a', 0, false);
           const fruit = rng.pick(FRUIT);
-          for (let k = 0; k < 5; k++) ink.fill.geometry(BLOB, mat(px + rng.range(-0.15, 0.15), top + 0.25, z + 0.3 + rng.range(-0.2, 0.2), 0.1, 0.1, 0.1), fruit);
+          for (let k = 0; k < 5; k++) ink.fill.geometry(SPECK, mat(px + rng.range(-0.15, 0.15), top + 0.25, z + 0.3 + rng.range(-0.2, 0.2), 0.1, 0.1, 0.1), fruit);
         }
         // Spare crates stacked beside the stall
         ink.box(x + cw / 2 + 0.3, y + 0.2, z + 0.5, 0.45, 0.4, 0.45, '#d9b08a');
@@ -1945,13 +2012,13 @@ export class CityChunk {
           for (const [dz, dy] of [[0.1, 0.1], [0.45, 0]] as const) {
             ink.geometry(CYL8, mat(px, top + dy + 0.15, z + dz, 0.16, 0.3, 0.16), rng.pick(['#8d8398', '#b9b3cc', '#b77a64']));
             const col = rng.pick(FLOWERS);
-            for (let k = 0; k < 4; k++) ink.fill.geometry(BLOB, mat(px + rng.range(-0.1, 0.1), top + dy + 0.42 + rng.range(0, 0.15), z + dz + rng.range(-0.08, 0.08), 0.09, 0.08, 0.09), col);
+            for (let k = 0; k < 4; k++) ink.fill.geometry(SPECK, mat(px + rng.range(-0.1, 0.1), top + dy + 0.42 + rng.range(0, 0.15), z + dz + rng.range(-0.08, 0.08), 0.09, 0.08, 0.09), col);
           }
         }
         // Buckets on the ground in front
         for (let px = cx0 + 0.3; px < x + cw / 2; px += 0.55) {
           ink.geometry(CYL8, mat(px, y + 0.18, z + 1.0, 0.17, 0.36, 0.17), '#b9b3cc');
-          ink.fill.geometry(BLOB, mat(px, y + 0.5, z + 1.0, 0.2, 0.16, 0.2), rng.pick(FLOWERS));
+          ink.fill.geometry(SPECK, mat(px, y + 0.5, z + 1.0, 0.2, 0.16, 0.2), rng.pick(FLOWERS));
         }
         break;
       }
@@ -1960,9 +2027,9 @@ export class CityChunk {
         ink.boxRot(P.set(x, top + 0.08, z + 0.3), eul.set(0.25, 0, 0), S.set(cw - 0.1, 0.12, 0.7), '#e6f1f7', false);
         for (let i = 0; i < Math.floor(cw / 0.3); i++) {
           const fx = cx0 + 0.2 + i * 0.3;
-          ink.fill.geometry(BLOB, matE(fx, top + 0.18, z + 0.3, 0.07, 0.06, 0.26, 0.25), rng.pick(['#b9c6d6', '#f0a497', '#e9786f', '#d6dde8']));
+          ink.fill.geometry(SPECK, matE(fx, top + 0.18, z + 0.3, 0.07, 0.06, 0.26, 0.25), rng.pick(['#b9c6d6', '#f0a497', '#e9786f', '#d6dde8']));
         }
-        for (let k = 0; k < 3; k++) ink.fill.geometry(BLOB, mat(cx0 + 0.2 + k * 0.2, top + 0.2, z + 0.62, 0.06, 0.05, 0.06), '#f5d45a');
+        for (let k = 0; k < 3; k++) ink.fill.geometry(SPECK, mat(cx0 + 0.2 + k * 0.2, top + 0.2, z + 0.62, 0.06, 0.05, 0.06), '#f5d45a');
         // A hanging scale
         ink.fill.box(x + cw / 2 - 0.3, top + 0.9, z + 0.1, 0.02, 0.5, 0.02, '#4a3a48');
         ink.geometry(CYL8, mat(x + cw / 2 - 0.3, top + 0.62, z + 0.1, 0.15, 0.05, 0.15), METAL);
@@ -1972,7 +2039,7 @@ export class CityChunk {
         for (let i = 0; i < Math.floor(cw / 0.55); i++) {
           const px = cx0 + 0.3 + i * 0.55;
           ink.geometry(CYL8, mat(px, top + 0.06, z + 0.3, 0.24, 0.12, 0.24), '#b98a5a');
-          for (let k = 0; k < 3; k++) ink.fill.geometry(BLOB, matE(px + (k - 1) * 0.12, top + 0.17, z + 0.3, 0.07, 0.07, 0.15, 0), rng.pick(['#e0a86a', '#c98a4a', '#f0c890']));
+          for (let k = 0; k < 3; k++) ink.fill.geometry(SPECK, matE(px + (k - 1) * 0.12, top + 0.17, z + 0.3, 0.07, 0.07, 0.15, 0), rng.pick(['#e0a86a', '#c98a4a', '#f0c890']));
         }
         // Baguettes standing in a tall basket
         ink.geometry(CYL8, mat(x + cw / 2 + 0.3, y + 0.35, z + 0.6, 0.2, 0.7, 0.2), '#b98a5a');
@@ -2037,7 +2104,7 @@ export class CityChunk {
           ink.fill.box(px, hy + 0.3, z + 0.75, 0.015, 0.4, 0.015, '#3b2a2a');
           b.emissive.geometry(BLOB, mat(px, hy, z + 0.75, 0.13, 0.17, 0.13), rng.pick(['#e8503a', '#f4c95d', '#e8503a', '#f28fb0']));
         }
-        for (let k = 0; k < 4; k++) ink.fill.geometry(BLOB, mat(cx0 + 0.3 + k * (cw - 0.6) / 3, top + 0.12, z + 0.3, 0.12, 0.13, 0.12), rng.pick(['#e8503a', '#f4c95d']));
+        for (let k = 0; k < 4; k++) ink.fill.geometry(SPECK, mat(cx0 + 0.3 + k * (cw - 0.6) / 3, top + 0.12, z + 0.3, 0.12, 0.13, 0.12), rng.pick(['#e8503a', '#f4c95d']));
         break;
       }
       case 'tea': {
@@ -2064,13 +2131,13 @@ export class CityChunk {
           const ph = rng.range(0.15, 0.3);
           ink.geometry(CYL8, mat(px, top + ph / 2, z + 0.3, 0.13, ph, 0.13), '#d98a6a');
           const r = rng.range(0.14, 0.24);
-          ink.fill.geometry(BLOB, mat(px, top + ph + r * 0.8, z + 0.3, r, r * 1.2, r), rng.pick(['#8bc36a', '#6f9a6a', '#9fc48a', ...FLOWERS.slice(0, 2)]));
+          ink.fill.geometry(SPECK, mat(px, top + ph + r * 0.8, z + 0.3, r, r * 1.2, r), rng.pick(['#8bc36a', '#6f9a6a', '#9fc48a', ...FLOWERS.slice(0, 2)]));
         }
         break;
       }
       case 'nets': {
         ink.geometry(TORUS, matE(x - cw / 4, top + 0.08, z + 0.3, 0.3, 0.3, 0.3, Math.PI / 2), '#d9c6b2');
-        for (let k = 0; k < 4; k++) ink.fill.geometry(BLOB, mat(x + (k - 1) * 0.28, top + 0.14, z + 0.3, 0.13, 0.13, 0.13), k % 2 ? '#e9786f' : '#fff1d6');
+        for (let k = 0; k < 4; k++) ink.fill.geometry(SPECK, mat(x + (k - 1) * 0.28, top + 0.14, z + 0.3, 0.13, 0.13, 0.13), k % 2 ? '#e9786f' : '#fff1d6');
         ink.fill.quad(x, y + 1.3, z - 0.18, cw, 1.1, 'pz', '#8f7a68');
         break;
       }
@@ -2095,7 +2162,7 @@ export class CityChunk {
       } else {
         ink.boxRot(P.set(x, tall, z + 0.25), eul.set(0.3, 0, 0), S.set(cw + 0.3, 0.06, 1.3), accent);
         // Fringe
-        for (let px = x - cw / 2; px <= x + cw / 2 + 0.01; px += 0.2) ink.fill.geometry(BLOB, mat(px, tall - 0.28, z + 0.87, 0.06, 0.08, 0.04), second);
+        for (let px = x - cw / 2; px <= x + cw / 2 + 0.01; px += 0.2) ink.fill.geometry(SPECK, mat(px, tall - 0.28, z + 0.87, 0.06, 0.08, 0.04), second);
       }
     } else if (canopy === 'umbrella') {
       ink.fill.geometry(CYL6, mat(x, y + 1.25, z - 0.25, 0.04, 2.5, 0.04), '#4a3a48');
@@ -2103,7 +2170,7 @@ export class CityChunk {
       ink.fill.geometry(CONE8, mat(x, y + 2.35, z + 0.2, r, 0.4, r), accent);
       ink.fill.geometry(CONE8, mat(x, y + 2.47, z + 0.2, r * 0.45, 0.19, r * 0.45), second);
       ink.outline.geometry(CONE8, mat(x, y + 2.35, z + 0.2, r + 0.06, 0.46, r + 0.06), 0x000000);
-      ink.fill.geometry(BLOB, mat(x, y + 2.6, z + 0.2, 0.06, 0.06, 0.06), second);
+      ink.fill.geometry(SPECK, mat(x, y + 2.6, z + 0.2, 0.06, 0.06, 0.06), second);
     } else if (canopy === 'tent') {
       // Peaked tent: two roof slopes meeting over the counter
       for (const px of [-cw / 2, cw / 2]) for (const pz of [-0.25, 0.85]) ink.fill.box(x + px, y + 1.05, z + pz, 0.07, 2.1, 0.07, frame);
@@ -2115,7 +2182,7 @@ export class CityChunk {
       // Cart roof on two poles
       for (const px of [-cw / 2 + 0.1, cw / 2 - 0.1]) ink.fill.box(x + px, y + 1.4, z + 0.3, 0.05, 1.2, 0.05, '#4a3a48');
       ink.box(x, y + 2.05, z + 0.3, cw + 0.3, 0.1, 1.0, accent);
-      for (let px = x - cw / 2; px <= x + cw / 2 + 0.01; px += 0.25) ink.fill.geometry(BLOB, mat(px, y + 1.95, z + 0.82, 0.07, 0.09, 0.04), second);
+      for (let px = x - cw / 2; px <= x + cw / 2 + 0.01; px += 0.25) ink.fill.geometry(SPECK, mat(px, y + 1.95, z + 0.82, 0.07, 0.09, 0.04), second);
     }
     // Hanging lantern
     // A lantern hung on a cord from the underside of the canopy
@@ -2424,7 +2491,7 @@ export class CityChunk {
     ink.surface = Surf.Foliage;
     for (let i = 0; i < rng.int(2, 5); i++) {
       const x = cx + rng.range(-w / 2 + 0.6, w / 2 - 0.6), z = cz + rng.range(-d / 2 + 0.6, d / 2 - 0.6);
-      if (this.nearTower(x, z)) continue;
+      if (this.nearTower(x, z) || this.hide >= 0.9) continue;
       ink.geometry(BLOB, mat(x, 0.35, z, 0.55, 0.45, 0.55), rng.pick(['#8fb98a', '#9fd49a', '#7aa874']));
     }
     ink.surface = Surf.Plain;

@@ -7,7 +7,6 @@ import { bus } from './events';
 //   ?seed=123       reproduce a world (the current seed is written to the URL)
 //   ?t=0.3          freeze the time of day (0 golden hour, .2 dusk, .35 night, .75 day)
 //   ?day=900        seconds per full day/night cycle (default 1200)
-//   ?shot=vista     lock the camera to a shot (canal | rooftops | vista)
 //   ?silent         run the visual clock without audio, no click needed
 //   ?train          send a train through immediately
 //   ?x=400          start further along the city
@@ -25,9 +24,6 @@ try {
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const world = new World(canvas, { seed, fixedTime, dayLength });
-const shot = params.get('shot');
-if (shot === 'canal' || shot === 'rooftops' || shot === 'vista') world.snapShot(shot);
-else if (shot === 'city') world.snapShot('rooftops');
 if (params.has('x')) world.startAt(Number(params.get('x')));
 if (params.has('train')) world.dispatchTrain();
 world.debugNoPost = params.has('nopost');
@@ -62,39 +58,6 @@ document.getElementById('play')!.addEventListener('click', () => begin(false));
 if (import.meta.env.DEV) Object.assign(window, { __lofi: { world, engine, Tone } });
 if (params.has('silent')) begin(true);
 
-// Views: picked by the viewer, never switched automatically.
-const VIEWS = ['canal', 'rooftops', 'vista'] as const;
-const VIEW_LABELS: Record<(typeof VIEWS)[number], string> = { canal: 'street level', rooftops: 'rooftops', vista: 'high vista' };
-const viewBtn = document.getElementById('view')!;
-const toast = document.getElementById('toast')!;
-let toastTimer = 0;
-function setView(name: (typeof VIEWS)[number], announce = true) {
-  world.setView(name);
-  try { localStorage.setItem('lofi-view', name); } catch { /* storage unavailable */ }
-  if (!announce) return;
-  toast.textContent = `view: ${VIEW_LABELS[name]}`;
-  toast.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove('show'), 1400);
-}
-function cycleView() {
-  setView(VIEWS[(VIEWS.indexOf(world.view) + 1) % VIEWS.length]);
-}
-viewBtn.addEventListener('click', cycleView);
-if (!shot) {
-  let saved: string | null = null;
-  try { saved = localStorage.getItem('lofi-view'); } catch { /* storage unavailable */ }
-  if (saved === 'rooftops' || saved === 'vista') setView(saved, false);
-}
-
-const browseBtn = document.getElementById('browse')!;
-function toggleBrowse() {
-  world.setBrowse(!world.browse);
-  browseBtn.classList.toggle('on', world.browse);
-  document.body.classList.toggle('browsing', world.browse);
-}
-browseBtn.addEventListener('click', toggleBrowse);
-
 const muteBtn = document.getElementById('mute')!;
 const fullBtn = document.getElementById('full')!;
 function toggleMute() {
@@ -114,9 +77,6 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'm') toggleMute();
   if (e.key === 'h') hud.hidden = !hud.hidden;
   if (e.key === 'f') toggleFullscreen();
-  if (e.key === 'b') toggleBrowse();
-  if (e.key === 'v') cycleView();
-  if (e.key === '1' || e.key === '2' || e.key === '3') setView(VIEWS[Number(e.key) - 1]);
 });
 
 // Resume audio when coming back to the tab (mobile browsers suspend it).

@@ -27,7 +27,7 @@ The music engine is the conductor. Every event is scheduled on the audio clock a
 | hi-hat | leaves flutter |
 | bar | a wind gust through the leaves (bigger every 4 bars) |
 | chord | grade leans warm on major chords, cool on minor |
-| section | camera moves to a new shot; the bridge pulls focus to the train line and sends a train through |
+| section | sends a train through, stirs the leaves and startles the birds |
 | kick | fountains leap, a whisper of exposure in the grade |
 | hi-hat | neon signs flicker now and then |
 | section | birds are startled into a wide sweep |
@@ -69,8 +69,17 @@ The camera travels forward through the city along a central corridor that change
 - **Park avenue**: lawns, tree rows, benches and a fountain.
 
 Both banks are generated (the far bank is a mirrored chunk with its own seed), so every district has
-buildings facing it on both sides. Section changes switch between the ground-level ride, a drone flight
-over the rooftops and a high vista with the train overtaking.
+buildings facing it on both sides. There is one camera: the street-level ride, centred on the corridor
+and looking straight ahead.
+
+**Built for that camera.** Since the view is always from street level looking forward, nothing behind
+the camera is built, and anything the front rows screen from view is skipped: low windows, shopfronts,
+benches, stalls and trees behind taller buildings, roof clutter that never clears a parapet, ivy and
+windows on walls that only face the back of another building. Each lot checks how tall the rows in
+front of it are, with a margin for the oblique views through avenues, parks and low buildings, so
+nothing that can actually be seen is left out. Tiny details (flowers, fruit, ivy) use a low-poly blob,
+and the canal reflection pass only runs when there's water ahead. Together that's 35-50% fewer
+triangles than drawing everything.
 
 ## Rendering
 
@@ -110,20 +119,13 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 | `?seed=123` | reproduce a world (the current seed is always written to the URL) |
 | `?t=0.35` | freeze time of day (`0` golden hour, `0.16` dusk, `0.35` night, `0.78` day) |
 | `?day=600` | seconds per day/night cycle |
-| `?shot=vista` | lock the camera to a shot: `canal` (ground ride), `rooftops`, `vista` |
 | `?x=400` | start further along the city |
 | `?silent` | visuals only, driven by the same sequencer without audio |
 | `?train` | send a train through immediately |
 | `?nopost` | skip post-processing (debug) |
-| `?cam=x,y,z,tx,ty,tz` | fixed debug camera (offsets from the drift position) |
+| `?cam=x,y,z,tx,ty,tz` | fixed debug camera for screenshots (offsets from the drift position) |
 
-Keys: `M` mute, `H` hide HUD, `F` fullscreen, `B` browse mode.
-
-## Browse mode
-
-Press `B` (or the 🎥 button) to take the camera. `W A S D` fly, `Q`/`E` (or `Space`/`Ctrl`) go down and
-up, `Shift` speeds up, drag to look around, and the mouse wheel sets the flying speed. On touch screens,
-drag to look and hold two fingers down to fly forward. Press `B` again to hand the camera back to the ride.
+Keys: `M` mute, `H` hide HUD, `F` fullscreen.
 
 ## Neighbourhoods
 
