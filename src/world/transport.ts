@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { InkedBuilder, GeoBuilder } from './geo';
 import type { Materials } from './materials';
-import { railStep, railYaw, trackPoint, RAIL_Y } from './rail';
+import { railStep, railYaw, trackPoint, railY, inTunnel, nextStation, TRACK_OFFSET } from './rail';
 import { CANAL_Z, TRAM_STREET, BUS_STREET } from './city';
 
 // Everything on wheels. Road vehicles live in lanes and follow the one in
@@ -99,19 +99,19 @@ function buildBus(mats: Materials, color: string): { obj: THREE.Group; length: n
   const lights = new GeoBuilder();
   const tail = new GeoBuilder();
   const glass = new GeoBuilder();
-  const L = 7.2;
-  ink.box(0, 1.45, 0, L, 2.3, 2.3, color);
-  ink.fill.box(0, 0.55, 0, L + 0.02, 0.5, 2.32, '#fff1d6');
-  ink.box(0, 2.68, 0, L - 0.6, 0.16, 2.0, '#e9e4ff');
-  for (let x = -L / 2 + 0.9; x < L / 2 - 0.9; x += 1.15) {
-    glass.box(x, 1.75, 1.16, 0.95, 0.8, 0.01, '#ffffff');
-    glass.box(x, 1.75, -1.16, 0.95, 0.8, 0.01, '#ffffff');
+  const L = 6.2;
+  ink.box(0, 1.3, 0, L, 2.0, 2.0, color);
+  ink.fill.box(0, 0.5, 0, L + 0.02, 0.42, 2.02, '#fff1d6');
+  ink.box(0, 2.38, 0, L - 0.6, 0.14, 1.75, '#e9e4ff');
+  for (let x = -L / 2 + 0.8; x < L / 2 - 0.8; x += 1.0) {
+    glass.box(x, 1.55, 1.01, 0.82, 0.7, 0.01, '#ffffff');
+    glass.box(x, 1.55, -1.01, 0.82, 0.7, 0.01, '#ffffff');
   }
-  glass.box(L / 2 + 0.005, 1.75, 0, 0.01, 1.0, 2.0, '#ffffff');
-  tail.box(L / 2 + 0.01, 2.4, 0, 0.02, 0.25, 1.4, '#ffb38a'); // destination sign
-  for (const dx of [L / 2 - 1.1, -0.3]) ink.fill.box(dx, 1.2, 1.161, 0.9, 1.8, 0.01, '#8e98d6');
-  wheels(ink, [L / 2 - 1.3, -L / 2 + 1.4], 1.1, 0.42);
-  lamps(lights, tail, L, 0.75, 1.1);
+  glass.box(L / 2 + 0.005, 1.55, 0, 0.01, 0.9, 1.75, '#ffffff');
+  tail.box(L / 2 + 0.01, 2.12, 0, 0.02, 0.22, 1.2, '#ffb38a'); // destination sign
+  for (const dx of [L / 2 - 0.95, -0.3]) ink.fill.box(dx, 1.05, 1.011, 0.8, 1.55, 0.01, '#8e98d6');
+  wheels(ink, [L / 2 - 1.1, -L / 2 + 1.2], 0.95, 0.36);
+  lamps(lights, tail, L, 0.65, 0.95);
   return { obj: group(ink, lights, tail, glass, mats), length: L };
 }
 
@@ -121,29 +121,29 @@ function buildTram(mats: Materials, color: string): { obj: THREE.Group; length: 
   const lights = new GeoBuilder();
   const tail = new GeoBuilder();
   const glass = new GeoBuilder();
-  const S = 6.2;
-  const L = S * 2 + 0.6;
+  const S = 5.0;
+  const L = S * 2 + 0.5;
   for (const cx of [S / 2 + 0.3, -S / 2 - 0.3]) {
-    ink.box(cx, 1.55, 0, S, 2.5, 2.3, color);
-    ink.fill.box(cx, 0.5, 0, S + 0.02, 0.45, 2.32, '#fff1d6');
+    ink.box(cx, 1.35, 0, S, 2.1, 2.0, color);
+    ink.fill.box(cx, 0.45, 0, S + 0.02, 0.38, 2.02, '#fff1d6');
     for (let x = cx - S / 2 + 0.8; x < cx + S / 2 - 0.6; x += 1.2) {
-      glass.box(x, 1.85, 1.16, 1.0, 0.95, 0.01, '#ffffff');
-      glass.box(x, 1.85, -1.16, 1.0, 0.95, 0.01, '#ffffff');
+      glass.box(x, 1.6, 1.01, 0.9, 0.8, 0.01, '#ffffff');
+      glass.box(x, 1.6, -1.01, 0.9, 0.8, 0.01, '#ffffff');
     }
-    ink.fill.geometry(new THREE.CylinderGeometry(1.15, 1.15, S, 12, 1, false, 0, Math.PI), m4.compose(new THREE.Vector3(cx, 2.8, 0), q.setFromEuler(eul.set(0, 0, Math.PI / 2)), new THREE.Vector3(1, 1, 0.25)), '#e9e4ff');
+    ink.fill.geometry(new THREE.CylinderGeometry(1.0, 1.0, S, 12, 1, false, 0, Math.PI), m4.compose(new THREE.Vector3(cx, 2.4, 0), q.setFromEuler(eul.set(0, 0, Math.PI / 2)), new THREE.Vector3(1, 1, 0.22)), '#e9e4ff');
   }
-  ink.fill.box(0, 1.55, 0, 0.6, 2.2, 2.0, '#6b5c78'); // articulation
-  glass.box(L / 2 + 0.005, 1.9, 0, 0.01, 1.1, 2.0, '#ffffff');
-  glass.box(-L / 2 - 0.005, 1.9, 0, 0.01, 1.1, 2.0, '#ffffff');
-  tail.box(L / 2 + 0.01, 2.6, 0, 0.02, 0.25, 1.2, '#ffe08a');
+  ink.fill.box(0, 1.35, 0, 0.5, 1.9, 1.7, '#6b5c78'); // articulation
+  glass.box(L / 2 + 0.005, 1.65, 0, 0.01, 0.95, 1.7, '#ffffff');
+  glass.box(-L / 2 - 0.005, 1.65, 0, 0.01, 0.95, 1.7, '#ffffff');
+  tail.box(L / 2 + 0.01, 2.25, 0, 0.02, 0.22, 1.0, '#ffe08a');
   // Pantograph
   q.setFromEuler(eul.set(0, 0, 0.7));
-  ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(1.2, 3.4, 0), q, new THREE.Vector3(1.3, 0.06, 0.06)), '#4a3a48');
+  ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(1.0, 2.9, 0), q, new THREE.Vector3(1.1, 0.05, 0.05)), '#4a3a48');
   q.setFromEuler(eul.set(0, 0, -0.7));
-  ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(1.9, 3.4, 0), q, new THREE.Vector3(1.3, 0.06, 0.06)), '#4a3a48');
-  ink.fill.box(1.55, 3.85, 0, 0.1, 0.06, 1.2, '#4a3a48');
-  wheels(ink, [L / 2 - 1.2, 0, -L / 2 + 1.2], 1.05, 0.35);
-  lamps(lights, tail, L, 0.8, 1.1);
+  ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(1.6, 2.9, 0), q, new THREE.Vector3(1.1, 0.05, 0.05)), '#4a3a48');
+  ink.fill.box(1.3, 3.3, 0, 0.08, 0.05, 1.0, '#4a3a48');
+  wheels(ink, [L / 2 - 1.0, 0, -L / 2 + 1.0], 0.9, 0.3);
+  lamps(lights, tail, L, 0.7, 0.95);
   return { obj: group(ink, lights, tail, glass, mats), length: L };
 }
 
@@ -265,8 +265,8 @@ export class Traffic {
 
 // ---------------------------------------------------------------------------
 
-const CAR_LEN = 9.5;
-const CAR_GAP = 0.6;
+const CAR_LEN = 7.2;
+const CAR_GAP = 0.45;
 
 /** A train of articulated cars on one track of the viaduct. */
 class TrainSet {
@@ -274,8 +274,11 @@ class TrainSet {
   private cars: THREE.Group[] = [];
   private headX = 0;
   private active = false;
-  private speed = 14;
+  private speed = 0;
+  private maxSpeed = 12;
   private wait = 0;
+  private dwell = 0;
+  private served = NaN;
 
   constructor(mats: Materials, private dir: 1 | -1, private offset: number, livery: string, stripe: string, count: number) {
     for (let i = 0; i < count; i++) {
@@ -301,7 +304,9 @@ class TrainSet {
   dispatch(camX: number) {
     if (this.active) return;
     this.active = true;
-    this.speed = 13 + Math.random() * 4;
+    this.maxSpeed = 11 + Math.random() * 3;
+    this.speed = this.maxSpeed;
+    this.served = NaN;
     // Enter from well behind (eastbound) or well ahead (westbound).
     this.headX = this.dir === 1 ? camX - 120 : camX + AHEAD + 40;
     this.group.visible = true;
@@ -313,15 +318,38 @@ class TrainSet {
       if (this.wait <= 0) this.dispatch(camX);
       return;
     }
+    // Brake smoothly into the next station and wait there.
+    const trainLen = this.cars.length * (CAR_LEN + CAR_GAP);
+    const centre = railStep(this.headX, (-this.dir * trainLen) / 2);
+    let target = this.maxSpeed;
+    if (this.dwell > 0) {
+      this.dwell -= dt;
+      target = 0;
+    } else {
+      const st = nextStation(centre - this.dir * 0.5, this.dir);
+      if (st && st.x !== this.served) {
+        const d = (st.x - centre) * this.dir;
+        target = Math.min(target, Math.sqrt(2 * 1.6 * Math.max(0, d)) + 0.3);
+        if (d < 0.35) {
+          this.dwell = 6 + Math.random() * 3;
+          this.served = st.x;
+          target = 0;
+          this.speed = 0;
+        }
+      }
+    }
+    this.speed += THREE.MathUtils.clamp(target - this.speed, -3 * dt, 1.4 * dt);
     this.headX = railStep(this.headX, this.speed * this.dir * dt);
     let x = this.headX;
     for (let i = 0; i < this.cars.length; i++) {
       // Each car's centre sits half a car behind the previous coupling.
-      const cx = railStep(x, -this.dir * CAR_LEN / 2);
+      const cx = railStep(x, (-this.dir * CAR_LEN) / 2);
       const p = trackPoint(cx, this.offset);
       const car = this.cars[i];
-      car.position.set(p.x, RAIL_Y, p.z);
-      car.rotation.y = railYaw(cx) + (this.dir === 1 ? 0 : Math.PI);
+      const ahead = railStep(cx, 1), behind = railStep(cx, -1);
+      car.position.set(p.x, railY(cx), p.z);
+      car.rotation.set(0, railYaw(cx) + (this.dir === 1 ? 0 : Math.PI), Math.atan2(railY(ahead) - railY(behind), 2) * this.dir, 'YZX');
+      car.visible = !inTunnel(cx);
       x = railStep(x, -this.dir * (CAR_LEN + CAR_GAP));
     }
     const tail = x;
@@ -339,39 +367,39 @@ function buildTrainCar(mats: Materials, livery: string, stripe: string, cab: boo
   const lights = new GeoBuilder();
   const tail = new GeoBuilder();
   const glass = new GeoBuilder();
-  const L = CAR_LEN, W = 2.7, H = 2.9;
-  ink.box(0, H / 2 + 0.55, 0, L, H, W, livery);
-  ink.fill.box(0, 0.95, 0, L + 0.02, 0.28, W + 0.02, stripe);
-  ink.fill.box(0, 2.95, 0, L + 0.02, 0.1, W + 0.02, stripe);
+  const L = CAR_LEN, W = 2.1, H = 2.25;
+  ink.box(0, H / 2 + 0.45, 0, L, H, W, livery);
+  ink.fill.box(0, 0.8, 0, L + 0.02, 0.22, W + 0.02, stripe);
+  ink.fill.box(0, 2.5, 0, L + 0.02, 0.08, W + 0.02, stripe);
   // Rounded roof
   q.setFromEuler(eul.set(0, 0, Math.PI / 2));
-  ink.fill.geometry(new THREE.CylinderGeometry(W / 2, W / 2, L - 0.2, 14, 1, false, 0, Math.PI), m4.compose(new THREE.Vector3(0, H + 0.55, 0), q, new THREE.Vector3(1, 1, 0.22)), '#e9e4ff');
+  ink.fill.geometry(new THREE.CylinderGeometry(W / 2, W / 2, L - 0.2, 14, 1, false, 0, Math.PI), m4.compose(new THREE.Vector3(0, H + 0.45, 0), q, new THREE.Vector3(1, 1, 0.22)), '#e9e4ff');
   // Window band and doors on both sides
-  for (let x = -L / 2 + 1.0; x < L / 2 - 0.8; x += 1.25) {
-    if (Math.abs(x - L / 4) < 0.6 || Math.abs(x + L / 4) < 0.6) continue;
-    glass.box(x, 2.25, W / 2 + 0.005, 1.0, 0.85, 0.01, '#ffffff');
-    glass.box(x, 2.25, -W / 2 - 0.005, 1.0, 0.85, 0.01, '#ffffff');
+  for (let x = -L / 2 + 0.8; x < L / 2 - 0.6; x += 0.95) {
+    if (Math.abs(x - L / 4) < 0.45 || Math.abs(x + L / 4) < 0.45) continue;
+    glass.box(x, 1.85, W / 2 + 0.005, 0.75, 0.65, 0.01, '#ffffff');
+    glass.box(x, 1.85, -W / 2 - 0.005, 0.75, 0.65, 0.01, '#ffffff');
   }
   for (const dx of [L / 4, -L / 4]) {
-    for (const z of [W / 2 + 0.01, -W / 2 - 0.01]) ink.fill.box(dx, 1.9, z, 1.0, 2.1, 0.01, '#8e98d6');
+    for (const z of [W / 2 + 0.01, -W / 2 - 0.01]) ink.fill.box(dx, 1.55, z, 0.75, 1.7, 0.01, '#8e98d6');
   }
   // Bogies
-  for (const bx of [L / 2 - 1.8, -L / 2 + 1.8]) {
-    ink.fill.box(bx, 0.35, 0, 2.2, 0.45, W - 0.3, '#4a3a48');
-    wheels(ink, [bx - 0.6, bx + 0.6], W / 2 - 0.25, 0.32);
+  for (const bx of [L / 2 - 1.4, -L / 2 + 1.4]) {
+    ink.fill.box(bx, 0.28, 0, 1.7, 0.35, W - 0.3, '#4a3a48');
+    wheels(ink, [bx - 0.45, bx + 0.45], W / 2 - 0.2, 0.25);
   }
   if (cab) {
     // Sloped nose, windscreen, headlights and a destination board
-    const nx = (L / 2 + 0.5) * cabDir;
+    const nx = (L / 2 + 0.35) * cabDir;
     q.setFromEuler(eul.set(0, 0, -0.5 * cabDir));
-    ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(nx - 0.2 * cabDir, 2.3, 0), q, new THREE.Vector3(1.2, 1.6, W - 0.1)), livery);
-    glass.box(nx + 0.05 * cabDir, 2.55, 0, 0.02, 0.8, W - 0.5, '#ffffff');
-    for (const z of [-0.8, 0.8]) lights.geometry(BULB, m4.makeScale(0.13, 0.1, 0.13).setPosition(nx + 0.45 * cabDir, 1.3, z), '#ffffff');
-    tail.box(nx - 0.1 * cabDir, 3.2, 0, 0.02, 0.3, 1.4, '#ffb38a');
+    ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(nx - 0.15 * cabDir, 1.85, 0), q, new THREE.Vector3(0.9, 1.25, W - 0.08)), livery);
+    glass.box(nx + 0.04 * cabDir, 2.05, 0, 0.02, 0.6, W - 0.4, '#ffffff');
+    for (const z of [-0.6, 0.6]) lights.geometry(BULB, m4.makeScale(0.1, 0.08, 0.1).setPosition(nx + 0.35 * cabDir, 1.05, z), '#ffffff');
+    tail.box(nx - 0.08 * cabDir, 2.6, 0, 0.02, 0.24, 1.1, '#ffb38a');
     // Pantograph
-    ink.fill.box(-cabDir * 1.5, 4.15, 0, 0.1, 0.06, 1.4, '#4a3a48');
+    ink.fill.box(-cabDir * 1.2, 3.3, 0, 0.08, 0.05, 1.1, '#4a3a48');
     q.setFromEuler(eul.set(0, 0, 0.6));
-    ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(-cabDir * 1.5 - 0.35, 3.85, 0), q, new THREE.Vector3(1.0, 0.06, 0.06)), '#4a3a48');
+    ink.fill.geometry(new THREE.BoxGeometry(1, 1, 1), m4.compose(new THREE.Vector3(-cabDir * 1.2 - 0.28, 3.05, 0), q, new THREE.Vector3(0.8, 0.05, 0.05)), '#4a3a48');
   }
   const g = group(ink, lights, tail, glass, mats);
   // Local +X is the direction of travel for a car facing forward.
@@ -384,8 +412,8 @@ export class Railway {
 
   constructor(mats: Materials) {
     this.trains = [
-      new TrainSet(mats, 1, -1.05, '#a9b3e6', '#7a86cc', 6),
-      new TrainSet(mats, -1, 1.05, '#fff1d6', '#e9786f', 5),
+      new TrainSet(mats, 1, -TRACK_OFFSET, '#a9b3e6', '#7a86cc', 6),
+      new TrainSet(mats, -1, TRACK_OFFSET, '#fff1d6', '#e9786f', 5),
     ];
     for (const t of this.trains) this.group.add(t.group);
   }

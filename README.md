@@ -117,7 +117,13 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 | `?nopost` | skip post-processing (debug) |
 | `?cam=x,y,z,tx,ty,tz` | fixed debug camera (offsets from the drift position) |
 
-Keys: `M` mute, `H` hide HUD, `F` fullscreen.
+Keys: `M` mute, `H` hide HUD, `F` fullscreen, `B` browse mode.
+
+## Browse mode
+
+Press `B` (or the 🎥 button) to take the camera. `W A S D` fly, `Q`/`E` (or `Space`/`Ctrl`) go down and
+up, `Shift` speeds up, drag to look around, and the mouse wheel sets the flying speed. On touch screens,
+drag to look and hold two fingers down to fly forward. Press `B` again to hand the camera back to the ride.
 
 ## Neighbourhoods
 
@@ -127,21 +133,38 @@ strung over the street, and picks what fills the corridor (canal, street, market
 
 | Neighbourhood | Character |
 | --- | --- |
-| Old town | pastel plaster, shopfronts and awnings, festoon bulbs |
-| Chinatown | red and gold facades, glazed pagoda roofs with upturned eaves, a paifang gate over the corridor, paper-lantern strings, Chinese signs |
-| Harbour | low brick warehouses with sawtooth roofs and tall chimneys, container yards with gantry cranes |
-| Neon | tall dark facades traced with neon strips, neon tube festoons, blade signs everywhere |
-| Arts | saturated colours and big painted murals on gable walls |
-| Garden | stone houses under ivy, lawns, ponds and gazebos |
-| Parkland | mostly parks: tree-lined avenues, fountains, ponds |
+| Old town | pastel plaster, shopfronts and awnings, festoon bulbs, flower baskets on the lamps; a **clock tower** |
+| Chinatown | red and gold facades, glazed pagoda roofs with upturned eaves, a paifang gate guarded by stone lions, hanzi shop boards and blade signs, red lattice balconies, paper lanterns at doors and windows, blossom trees; a **five-tier pagoda** |
+| Harbour | low brick warehouses with sawtooth roofs and tall chimneys, container yards with gantry cranes, fishmongers; a **lighthouse** |
+| Neon | tall dark facades traced with neon strips, neon tube festoons, blade signs and glowing vending machines; a **screen tower** |
+| Arts | saturated colours, big murals on gable walls, rainbow crossings, sculptures in the squares; a **giant ring sculpture** |
+| Garden | stone houses under ivy, maples, flower beds, ponds and gazebos; a **glasshouse** |
+| Parkland | mostly parks: cherry blossom avenues, fountains, bandstands; a **ferris wheel** |
+
+Each neighbourhood's landmark stands behind the first row of buildings halfway through its run.
+
+**Markets** mix stall types by neighbourhood (produce, flowers, fish on ice, bakeries, books,
+record crates with a turntable, clothes rails, street food and dumpling steamers that steam,
+paper lanterns, tea, gadgets, plants, nets and buoys) under striped, solid, umbrella, peaked-tent or
+cart canopies.
+
+**No clipping:** sidewalk trees and lamps are placed after the buildings and nudged clear of awnings,
+balconies, fire escapes and signs. Fire escapes, balconies and blade signs never share a spot, blade
+signs stick out from the wall instead of covering windows, park props claim their own space, and boats
+stay low enough to pass under the bridges. Window glass, curtains and signs sit well off the wall and
+use a depth offset so nothing shimmers in the distance.
 
 ## Transport
 
-- **Railway:** a curved elevated viaduct (`src/world/rail.ts`) sweeps across the whole city and over the
-  canal. Two trains run in opposite directions every half-minute or so, and more are sent on section
-  changes. The articulated cars have rounded roofs, lit window bands, doors, bogies, cab noses with
-  headlights and pantographs. Buildings under the viaduct stay low, like railway arches, and pillars
-  keep clear of roads and the corridor.
+- **Railway:** a curved line (`src/world/rail.ts`) sweeps across the whole city on a viaduct and
+  over the canal. Where the curve swings deep into the back blocks it ramps down to street level in a
+  fenced cutting, or dives into a tunnel through a portal. **Stations** sit every 260–380 units, on the
+  viaduct or at street level, with platforms, canopies, benches, lamps and name boards. Trains brake
+  into each one, wait with their doors open, then pull away. Two trains run in opposite directions,
+  and more are sent on section changes. The cars are to scale with the buildings and have rounded
+  roofs, lit window bands, doors, bogies, cab noses with headlights and pantographs. Buildings under
+  the viaduct stay low, like railway arches, and pillars keep clear of roads and the corridor. The
+  camera never passes through a train: near the line it rises above the deck or drops below it.
 - **Trams:** articulated trams run both ways on the tram street, on tracks with overhead wires, and
   pause at shelters.
 - **Buses, cars, vans and taxis:** these share the bus street and the corridor's street districts.

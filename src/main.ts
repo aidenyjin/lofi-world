@@ -62,6 +62,14 @@ document.getElementById('play')!.addEventListener('click', () => begin(false));
 if (import.meta.env.DEV) Object.assign(window, { __lofi: { world, engine, Tone } });
 if (params.has('silent')) begin(true);
 
+const browseBtn = document.getElementById('browse')!;
+function toggleBrowse() {
+  world.setBrowse(!world.browse);
+  browseBtn.classList.toggle('on', world.browse);
+  document.body.classList.toggle('browsing', world.browse);
+}
+browseBtn.addEventListener('click', toggleBrowse);
+
 const muteBtn = document.getElementById('mute')!;
 const fullBtn = document.getElementById('full')!;
 function toggleMute() {
@@ -81,6 +89,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'm') toggleMute();
   if (e.key === 'h') hud.hidden = !hud.hidden;
   if (e.key === 'f') toggleFullscreen();
+  if (e.key === 'b') toggleBrowse();
 });
 
 // Resume audio when coming back to the tab (mobile browsers suspend it).

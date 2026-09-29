@@ -9,6 +9,7 @@ import { Leaves } from './leaves';
 import { Boats, Birds, Particles, Fireflies } from './life';
 import { Traffic, Railway } from './transport';
 import { CanalWater } from './water';
+import { setRailSeed, railZ, railY, railSlope, inTunnel, DECK_H } from './rail';
 
 export interface WorldOptions {
   seed: number;
@@ -40,7 +41,7 @@ const SHOTS: Record<ShotName, Shot> = {
   // Gliding down the canal at boat height, under string lights and bridges.
   canal: { height: 3.6, lateral: CANAL_Z, ahead: 30, lookY: 2.8, lookZ: CANAL_Z, focus: 20, aperture: 0.45, speed: 3.2 },
   // A drone flight over the rooftops, looking ahead along the canal.
-  rooftops: { height: 19, lateral: CANAL_Z + 7, ahead: 38, lookY: 5, lookZ: CANAL_Z - 9, focus: 40, aperture: 0.6, speed: 4 },
+  rooftops: { height: 24, lateral: CANAL_Z + 7, ahead: 38, lookY: 5, lookZ: CANAL_Z - 9, focus: 40, aperture: 0.6, speed: 4 },
   // High and far: the city rolling toward the horizon, the train overtaking.
   vista: { height: 34, lateral: CANAL_Z + 14, ahead: 90, lookY: 10, lookZ: CANAL_Z - 26, focus: 85, aperture: 0.75, speed: 5 },
 };
@@ -52,7 +53,7 @@ function damp(current: number, target: number, rate: number, dt: number): number
 export class World {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(32, 1, 0.5, 1200);
+  readonly camera = new THREE.PerspectiveCamera(32, 1, 0.8, 1200);
 
   private mats = new Materials();
   private post: Post;
@@ -84,6 +85,7 @@ export class World {
   private shotSpeed = 0.35;
   private lookTarget = new THREE.Vector3();
   private groundLift = 0;
+  private railLift = 0;
 
   // Music-driven state
   private beatPulse = 0;
@@ -101,6 +103,7 @@ export class World {
   debugCam: number[] | null = null;
 
   constructor(canvas: HTMLCanvasElement, private opts: WorldOptions) {
+    setRailSeed(opts.seed);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     // Phones and tablets: fewer pixels, smaller shadows, lighter blur.
     const lowPower = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
@@ -150,6 +153,7 @@ export class World {
     this.listen();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    this.browseListeners();
   }
 
   private listen() {
@@ -218,6 +222,93 @@ export class World {
     this.shotLocked = true;
     this.shotTarget = SHOTS[name];
     this.shot = { ...SHOTS[name] };
+  }
+
+  /**
+   * Never let the camera pass through the viaduct, a platform or a train:
+   * near the line, push it above the trains or below the deck.
+   */
+  private keepClearOfRailway(p: THREE.Vector3) {
+    if (inTunnel(p.x)) return;
+    const across = Math.abs(p.z - railZ(p.x)) / Math.sqrt(1 + railSlope(p.x) ** 2);
+    if (across > 6.5) return;
+    const top = railY(p.x);
+    const lo = top - DECK_H - 1.5;
+    const hi = top + 4.6;
+    if (p.y > lo && p.y < hi) p.y = p.y > (lo + hi) / 2 || lo < 1 ? hi : lo;
+  }
+
+  // ---- Browse mode: fly the camera yourself ---------------------------------
+  browse = false;
+  private browseState = { pos: new THREE.Vector3(), yaw: 0, pitch: -0.15, speed: 10 };
+  private keys = new Set<string>();
+  private drag: { x: number; y: number; id: number } | null = null;
+  /** Touch points down on the canvas; two or more fly forward (phones have no keys). */
+  private touches = new Set<number>();
+
+  setBrowse(on: boolean) {
+    if (on === this.browse) return;
+    this.browse = on;
+    const b = this.browseState;
+    if (on) {
+      b.pos.copy(this.camera.position);
+      const dir = this.lookTarget.clone().sub(this.camera.position).normalize();
+      b.yaw = Math.atan2(-dir.z, dir.x);
+      b.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -0.99, 0.99));
+    } else {
+      // Carry on the journey from wherever you flew to.
+      this.camX = b.pos.x;
+    }
+  }
+
+  private browseListeners() {
+    const el = this.renderer.domElement;
+    addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
+    addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+    addEventListener('blur', () => this.keys.clear());
+    el.addEventListener('pointerdown', (e) => {
+      if (!this.browse) return;
+      if (!this.drag) this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      if (e.pointerType === 'touch') this.touches.add(e.pointerId);
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!this.browse || !this.drag || e.pointerId !== this.drag.id) return;
+      const b = this.browseState;
+      b.yaw -= (e.clientX - this.drag.x) * 0.004;
+      b.pitch = THREE.MathUtils.clamp(b.pitch - (e.clientY - this.drag.y) * 0.004, -1.45, 1.45);
+      this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    });
+    const release = (e: PointerEvent) => {
+      this.touches.delete(e.pointerId);
+      if (this.drag?.id === e.pointerId) this.drag = null;
+    };
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('wheel', (e) => {
+      if (!this.browse) return;
+      this.browseState.speed = THREE.MathUtils.clamp(this.browseState.speed * (e.deltaY > 0 ? 0.85 : 1.18), 2, 80);
+    }, { passive: true });
+  }
+
+  private updateBrowse(dt: number) {
+    const b = this.browseState;
+    const k = this.keys;
+    const fwd = new THREE.Vector3(Math.cos(b.yaw) * Math.cos(b.pitch), Math.sin(b.pitch), -Math.sin(b.yaw) * Math.cos(b.pitch));
+    const right = new THREE.Vector3(Math.sin(b.yaw), 0, Math.cos(b.yaw));
+    const move = new THREE.Vector3();
+    if (k.has('w') || k.has('arrowup') || this.touches.size >= 2) move.add(fwd);
+    if (k.has('s') || k.has('arrowdown')) move.sub(fwd);
+    if (k.has('d') || k.has('arrowright')) move.add(right);
+    if (k.has('a') || k.has('arrowleft')) move.sub(right);
+    if (k.has('e') || k.has(' ')) move.y += 1;
+    if (k.has('q') || k.has('control')) move.y -= 1;
+    const fast = k.has('shift') ? 3 : 1;
+    if (move.lengthSq() > 0) b.pos.addScaledVector(move.normalize(), b.speed * fast * dt);
+    b.pos.y = Math.max(0.8, b.pos.y);
+    this.camX = b.pos.x;
+    this.camera.position.copy(b.pos);
+    this.lookTarget.copy(b.pos).add(fwd);
   }
 
   /** Start the journey somewhere else along the city. */
@@ -291,7 +382,7 @@ export class World {
     const g = this.shotTarget;
     const r = this.shotSpeed;
     s.speed = damp(s.speed, g.speed, r, dt);
-    this.camX += s.speed * dt;
+    if (!this.browse) this.camX += s.speed * dt;
     s.height = damp(s.height, g.height, r, dt);
     s.lateral = damp(s.lateral, g.lateral, r, dt);
     s.ahead = damp(s.ahead, g.ahead, r, dt);
@@ -309,6 +400,19 @@ export class World {
     const bob = Math.sin(t * 0.9) * 0.08 * low + Math.sin(t * 0.21) * 0.4 * (1 - low);
     this.camera.position.set(this.camX, s.height + bob + this.groundLift * low, s.lateral + weave);
     this.lookTarget.set(this.camX + s.ahead, s.lookY + this.groundLift * low, s.lookZ + weave * 0.4 + Math.sin(t * 0.07) * 2.5);
+    // Rise (or dip) smoothly ahead of the railway instead of snapping.
+    let need = 0;
+    for (const ahead of [0, 8, 16, 26]) {
+      const probe = this.camera.position.clone();
+      probe.x += ahead;
+      const before = probe.y;
+      this.keepClearOfRailway(probe);
+      if (Math.abs(probe.y - before) > Math.abs(need)) need = probe.y - before;
+    }
+    this.railLift = damp(this.railLift, need, need > this.railLift ? 4 : 0.8, dt);
+    this.camera.position.y += this.railLift;
+    this.keepClearOfRailway(this.camera.position);
+    if (this.browse) this.updateBrowse(dt);
     if (this.debugCam) {
       const [cx, cy, cz, tx, ty, tz] = this.debugCam;
       this.camera.position.set(this.camX + cx, cy, cz);

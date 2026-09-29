@@ -41,7 +41,7 @@ export class Boats {
       const dir = i % 2 === 0 ? 1 : -1;
       const ink = new InkedBuilder(0.07);
       const lights = new GeoBuilder();
-      buildBoat(ink, lights, 0, 0, colors[i], i === 1, 0);
+      buildBoat(ink, lights, 0, 0, colors[i], false, 0); // no canopy: it would hit the bridges
       const obj = meshesFrom(ink, lights, mats);
       obj.position.set(0, WATER_Y, CANAL_Z + (dir === 1 ? 0.7 : -0.7));
       this.group.add(obj);

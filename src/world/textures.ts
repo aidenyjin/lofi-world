@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Rng } from '../rng';
 import { INK } from '../palette';
+import { STATION_NAMES } from './rail';
 
 // Everything here is drawn at runtime on 2D canvases. These stand in for
 // hand-painted art until real sprites arrive; swapping them for PNGs only
@@ -128,6 +129,8 @@ export interface SignAtlas {
   cjkWide: UVRect[];
   /** 1:1 painted murals for the arts district. */
   murals: UVRect[];
+  /** Enamel station name boards, one per STATION_NAMES entry. */
+  stations: UVRect[];
 }
 
 const NEON_WORDS = ['HOTEL', 'BAR', 'RAMEN', 'JAZZ', 'CAFE', 'VINYL', 'BOOKS', 'NOODLE', 'LOFI', 'TEA', 'DINER', 'RADIO'];
@@ -224,6 +227,24 @@ export function signAtlas(): SignAtlas {
     small.push(toUV(x, y, BW, BH));
   }
 
+  // --- Station name boards --------------------------------------------------
+  const stations: UVRect[] = [];
+  STATION_NAMES.forEach((name, i) => {
+    const x = (i % 4) * 505 + 8;
+    const y = 1560 + Math.floor(i / 4) * 128;
+    const w = 490, h = 104;
+    g.fillStyle = '#2f4f8a';
+    g.fillRect(x, y, w, h);
+    g.fillStyle = '#fff1d6';
+    g.fillRect(x + 8, y + 8, w - 16, 10);
+    g.fillRect(x + 8, y + h - 18, w - 16, 10);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    fitText(g, name.toUpperCase(), w - 50, 56, font);
+    g.fillText(name.toUpperCase(), x + w / 2, y + h / 2 + 3);
+    stations.push(toUV(x, y, w, h));
+  });
+
   // --- Chinatown signs (bottom half of the atlas) -------------------------
   const cjkTall: UVRect[] = [];
   const cjkWide: UVRect[] = [];
@@ -278,7 +299,7 @@ export function signAtlas(): SignAtlas {
 
   const tex = toTexture(c);
   tex.anisotropy = 16;
-  atlas = { tex, wide, tall, small, cjkTall, cjkWide, murals };
+  atlas = { tex, wide, tall, small, cjkTall, cjkWide, murals, stations };
   return atlas;
 }
 

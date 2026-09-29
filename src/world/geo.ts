@@ -108,6 +108,18 @@ export class GeoBuilder {
     return this;
   }
 
+  /** Like geometry(), but maps the source UVs into an atlas rect [u0, v0, u1, v1]. */
+  geometryUV(geo: THREE.BufferGeometry, m: THREE.Matrix4, color: THREE.ColorRepresentation, rect: [number, number, number, number]): this {
+    const start = this.uv.length;
+    this.geometry(geo, m, color);
+    const uv = geo.getAttribute('uv');
+    for (let i = 0, k = start; i < uv.count; i++, k += 2) {
+      this.uv[k] = rect[0] + uv.getX(i) * (rect[2] - rect[0]);
+      this.uv[k + 1] = rect[1] + uv.getY(i) * (rect[3] - rect[1]);
+    }
+    return this;
+  }
+
   /**
    * Axis-aligned quad facing ±X, ±Z or up (py). `uv` optionally maps the quad
    * to a sub-rectangle of a texture atlas as [u0, v0, u1, v1].

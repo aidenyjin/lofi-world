@@ -36,3 +36,11 @@ button { font: inherit; color: var(--ink); cursor: pointer; touch-action: manipu
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
 }
 #controls button[hidden] { display: none; }
+#controls button.on { background: var(--ink); color: var(--cream); }
+#browse-help {
+  position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  font: 12px/1.3 ui-monospace, monospace; color: var(--cream); background: rgba(59, 42, 58, 0.7);
+  padding: 6px 12px; border-radius: 999px; pointer-events: none; display: none; white-space: nowrap;
+}
+body.browsing #browse-help { display: block; }
+body.browsing #scene { cursor: grab; }
