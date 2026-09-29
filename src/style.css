@@ -1,0 +1,23 @@
+:root { --ink: #3b2a3a; --cream: #fff4e6; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #f6d9c4; }
+#scene { display: block; width: 100vw; height: 100vh; }
+#start {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: rgba(255, 236, 220, 0.35); backdrop-filter: blur(6px);
+  transition: opacity 1.2s ease;
+}
+#start.hidden { opacity: 0; pointer-events: none; }
+.card { text-align: center; color: var(--ink); font-family: "Trebuchet MS", system-ui, sans-serif; }
+.card h1 { font-size: clamp(2.5rem, 8vw, 5rem); margin: 0; letter-spacing: 0.04em; text-shadow: 3px 3px 0 var(--cream); }
+.card p { margin: 0.25rem 0 1.5rem; opacity: 0.75; }
+.card button {
+  font: inherit; font-size: 1.1rem; padding: 0.7rem 1.6rem; border-radius: 999px;
+  border: 3px solid var(--ink); background: var(--cream); color: var(--ink); cursor: pointer;
+  box-shadow: 4px 4px 0 var(--ink); transition: transform 0.1s, box-shadow 0.1s;
+}
+.card button:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
+#hud {
+  position: fixed; left: 16px; bottom: 12px; display: flex; gap: 1rem;
+  font: 12px/1 ui-monospace, monospace; color: var(--ink); opacity: 0.55; pointer-events: none;
+}
