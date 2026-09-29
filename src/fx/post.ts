@@ -31,11 +31,11 @@ export class Post {
     uNight: { value: 0 },
   };
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, type: THREE.TextureDataType = THREE.HalfFloatType) {
     const depth = new THREE.DepthTexture(width, height);
     depth.type = THREE.UnsignedIntType;
     this.target = new THREE.WebGLRenderTarget(width, height, {
-      type: THREE.HalfFloatType,
+      type,
       depthTexture: depth,
       depthBuffer: true,
     });

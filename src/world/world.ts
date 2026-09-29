@@ -81,12 +81,17 @@ export class World {
 
   constructor(canvas: HTMLCanvasElement, private opts: WorldOptions) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // Phones and tablets: fewer pixels, smaller shadows, lighter blur.
+    const lowPower = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPower ? 1.25 : 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.NoToneMapping;
 
-    this.post = new Post(2, 2);
+    const gl = this.renderer.extensions;
+    const halfFloat = gl.has('EXT_color_buffer_half_float') || gl.has('EXT_color_buffer_float');
+    this.post = new Post(2, 2, halfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType);
+    if (lowPower) this.post.uniforms.uMaxBlur.value = 6;
     this.skyline = new Skyline(opts.seed, this.sky.skyUniforms);
     this.train = new Train(this.mats);
     this.leaves = new Leaves(this.mats, () => this.lookTarget);
@@ -102,7 +107,7 @@ export class World {
     sc.bottom = -75;
     sc.near = 1;
     sc.far = 320;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.setScalar(lowPower ? 1024 : 2048);
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.04;
 
@@ -182,8 +187,8 @@ export class World {
   }
 
   private resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = this.renderer.domElement.clientWidth || window.innerWidth;
+    const h = this.renderer.domElement.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     // Keep a similar horizontal field of view on portrait screens.

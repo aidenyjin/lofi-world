@@ -16,7 +16,11 @@ const fixedTime = params.has('t') ? Number(params.get('t')) : null;
 const dayLength = Number(params.get('day')) || 1200;
 
 params.set('seed', String(seed));
-history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+try {
+  history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+} catch {
+  // Sandboxed embeds may not allow URL changes; the seed just won't be shareable.
+}
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const world = new World(canvas, { seed, fixedTime, dayLength });
@@ -54,13 +58,30 @@ document.getElementById('play')!.addEventListener('click', () => begin(false));
 if (import.meta.env.DEV) Object.assign(window, { __lofi: { world, engine, Tone } });
 if (params.has('silent')) begin(true);
 
+const muteBtn = document.getElementById('mute')!;
+const fullBtn = document.getElementById('full')!;
+function toggleMute() {
+  engine.setMuted(!engine.muted);
+  muteBtn.textContent = engine.muted ? '🔇' : '🔊';
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+}
+muteBtn.addEventListener('click', toggleMute);
+fullBtn.addEventListener('click', toggleFullscreen);
+// iPhone Safari has no element fullscreen; hide the button there.
+if (!document.fullscreenEnabled) fullBtn.hidden = true;
+
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'm') engine.setMuted(!engine.muted);
+  if (e.key === 'm') toggleMute();
   if (e.key === 'h') hud.hidden = !hud.hidden;
-  if (e.key === 'f') {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen();
-  }
+  if (e.key === 'f') toggleFullscreen();
+});
+
+// Resume audio when coming back to the tab (mobile browsers suspend it).
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && started) Tone.getContext().resume().catch(() => {});
 });
 
 bus.on('chord', ({ name }) => {

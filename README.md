@@ -57,8 +57,16 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 
 Keys: `M` mute, `H` hide HUD, `F` fullscreen.
 
-## Replacing placeholder art
+## Characters
 
-The characters and signs are drawn on canvases at runtime (`src/world/textures.ts`). To use real art,
-return a texture loaded from a PNG in `characterTexture()` instead. The sprites are camera-facing cut-outs
-anchored at their feet, so any transparent PNG of a character works.
+Rooftop residents are hand-painted gouache cut-outs in `public/sprites/`, listed in `src/world/cast.ts`.
+They were generated with Krea 2 Turbo and the `ilkerzgi/krea-2-bold-gouache-urban-sketch-lora` style LoRA
+(`tools/sprites/generate.py`), then cut out with `tools/sprites/cutout.py`. To add one, cut out a
+transparent image (feet at the bottom), put it in `public/sprites/`, and add an entry to `CAST`.
+Generate the whole cast in one pass on one backend so the style stays consistent.
+
+## Mobile
+
+On phones the renderer uses a lower pixel ratio, smaller shadow maps and a lighter depth-of-field pass,
+falls back to 8-bit render targets where half-float isn't supported, and shows on-screen mute and
+fullscreen buttons. On iPhone, the silent switch mutes web audio.

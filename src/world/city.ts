@@ -3,7 +3,8 @@ import { Rng, hashSeed } from '../rng';
 import { WALLS, TRIM, ROOF, FOLIAGE } from '../palette';
 import { GeoBuilder, InkedBuilder } from './geo';
 import type { Materials } from './materials';
-import { characterTexture, signTexture, SPECIES, POSES, type Pose } from './textures';
+import { signTexture } from './textures';
+import { CAST, castTexture, type Pose } from './cast';
 
 // The city is generated in chunks along +X (the direction the camera drifts).
 // Each chunk is a strip of city blocks receding into the distance, with the
@@ -248,7 +249,7 @@ export class CityChunk {
       for (let i = 0; i < count; i++) {
         const px = rng.range(usable.x0 + 0.4, usable.x1 - 0.4);
         const pz = usable.z1 - rng.range(0, 1.2);
-        this.resident(rng, px, roofY, pz, ink);
+        this.resident(rng, px, roofY, pz);
       }
     }
   }
@@ -363,31 +364,24 @@ export class CityChunk {
     // Bench
     ink.box(cx, 0.75, cz + d / 2 - 1.2, 2, 0.12, 0.6, WOOD);
     ink.box(cx, 1.1, cz + d / 2 - 1.5, 2, 0.5, 0.1, WOOD);
-    if (rng.chance(0.6)) this.resident(rng, cx + rng.range(-0.6, 0.6), 0.3, cz + d / 2 - 0.9, ink, 'sit');
+    if (rng.chance(0.6)) this.resident(rng, cx + rng.range(-0.6, 0.6), 0.3, cz + d / 2 - 0.9, 'sit');
   }
 
-  private resident(rng: Rng, x: number, y: number, z: number, ink: InkedBuilder, forcePose?: Pose) {
-    const species = rng.pick(SPECIES);
-    const pose = forcePose ?? rng.pick(POSES);
-    const tex = characterTexture(species, pose, rng.int(0, 6));
-    const sprite = new THREE.Sprite(this.mats.spriteMaterial(tex));
-    const height = pose === 'stand' || pose === 'paint' ? 3.3 : 2.8;
-    const scale = new THREE.Vector2(height * (256 / 320), height);
+  private resident(rng: Rng, x: number, y: number, z: number, forcePose?: Pose) {
+    const pool = forcePose ? CAST.filter((c) => c.pose === forcePose) : CAST;
+    const member = rng.pick(pool.length ? pool : CAST);
+    const sprite = new THREE.Sprite(this.mats.spriteMaterial(castTexture(member)));
+    const h = member.worldHeight * rng.range(0.94, 1.06);
+    const scale = new THREE.Vector2((h * member.width) / member.height, h);
+    // Mirror some so repeats feel less repetitive.
+    if (rng.chance(0.5)) scale.x *= -1;
     sprite.center.set(0.5, 0.02);
     sprite.position.set(x, y, z);
     sprite.scale.set(scale.x, scale.y, 1);
     this.group.add(sprite);
-    this.residents.push({ sprite, baseScale: scale, phase: rng.range(0, Math.PI * 2), bounce: pose === 'read' ? 0.4 : 1 });
+    this.residents.push({ sprite, baseScale: scale, phase: rng.range(0, Math.PI * 2), bounce: member.bounce });
 
-    if (pose === 'paint') {
-      // Easel beside the painter.
-      const ex = x + 1.1;
-      ink.box(ex - 0.3, y + 0.8, z - 0.1, 0.07, 1.6, 0.07, WOOD, 0.3);
-      ink.box(ex + 0.3, y + 0.8, z - 0.1, 0.07, 1.6, 0.07, WOOD, -0.3);
-      ink.box(ex, y + 1.35, z, 0.9, 0.75, 0.06, '#9fd1f0');
-    }
-
-    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), this.mats.blobShadow);
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(scale.x) * 0.9, 1.2), this.mats.blobShadow);
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.set(x, y + 0.03, z);
     this.group.add(shadow);

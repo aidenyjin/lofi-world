@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6d9c4" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="description" content="A procedurally generated rooftop city that moves to procedurally generated lofi." />
     <title>Lofi World</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍂</text></svg>" />
     <link rel="stylesheet" href="/src/style.css" />
@@ -17,6 +20,10 @@
       </div>
     </div>
     <div id="hud"><span id="hud-chord"></span><span id="hud-time"></span></div>
+    <div id="controls">
+      <button id="mute" aria-label="Mute">🔊</button>
+      <button id="full" aria-label="Fullscreen">⛶</button>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

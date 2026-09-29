@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 // The rooftop residents: hand-painted gouache cut-outs generated with
 // Krea 2 Turbo + the "bold gouache urban sketch" LoRA (see tools/sprites).
+// Only these two match the target style so far; more are coming.
 // Sizes are the cut-out PNG dimensions so aspect ratios are known up front.
 
 export type Pose = 'stand' | 'sit';
@@ -20,11 +21,6 @@ export interface CastMember {
 export const CAST: readonly CastMember[] = [
   { id: 'bear-read', pose: 'sit', width: 449, height: 512, worldHeight: 3.0, bounce: 0.45 },
   { id: 'bunny-paint', pose: 'stand', width: 429, height: 512, worldHeight: 3.3, bounce: 0.5 },
-  { id: 'cat-stand', pose: 'stand', width: 289, height: 512, worldHeight: 3.3, bounce: 1 },
-  { id: 'sheep-sit', pose: 'sit', width: 391, height: 512, worldHeight: 2.8, bounce: 1.2 },
-  { id: 'fox-stand', pose: 'stand', width: 289, height: 512, worldHeight: 3.5, bounce: 0.9 },
-  { id: 'frog-sit', pose: 'sit', width: 472, height: 512, worldHeight: 2.8, bounce: 1.1 },
-  { id: 'raccoon-stand', pose: 'stand', width: 452, height: 512, worldHeight: 3.2, bounce: 0.8 },
 ];
 
 const loader = new THREE.TextureLoader();
