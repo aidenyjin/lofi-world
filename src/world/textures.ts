@@ -33,13 +33,13 @@ export function toonGradient(): THREE.DataTexture {
 
 /** Near-white mottled brush strokes; multiplied over vertex colours. */
 export function brushTexture(seed = 7): THREE.CanvasTexture {
-  const size = 512;
+  const size = 1024;
   const [c, g] = canvas(size, size);
   const rng = new Rng(seed);
   g.fillStyle = '#f4f0ec';
   g.fillRect(0, 0, size, size);
   // Broad washes, drawn with wrap-around so the texture tiles.
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 900; i++) {
     const x = rng.range(0, size);
     const y = rng.range(0, size);
     const len = rng.range(40, 160);
@@ -123,6 +123,11 @@ export interface SignAtlas {
   tall: UVRect[];
   /** 2:1 small shopfront boards. */
   small: UVRect[];
+  /** Chinatown: 1:4 vertical signs and 4:1 gold-on-red boards. */
+  cjkTall: UVRect[];
+  cjkWide: UVRect[];
+  /** 1:1 painted murals for the arts district. */
+  murals: UVRect[];
 }
 
 const NEON_WORDS = ['HOTEL', 'BAR', 'RAMEN', 'JAZZ', 'CAFE', 'VINYL', 'BOOKS', 'NOODLE', 'LOFI', 'TEA', 'DINER', 'RADIO'];
@@ -140,13 +145,14 @@ let atlas: SignAtlas | null = null;
 export function signAtlas(): SignAtlas {
   if (atlas) return atlas;
   const S = 2048;
-  const [c, g] = canvas(S, S);
+  const SH = 4096;
+  const [c, g] = canvas(S, SH);
   const rng = new Rng(4242);
   const font = (px: number) => `900 ${px}px "Arial Black", "Trebuchet MS", sans-serif`;
   const wide: UVRect[] = [];
   const tall: UVRect[] = [];
   const small: UVRect[] = [];
-  const toUV = (x: number, y: number, w: number, h: number): UVRect => [x / S, 1 - (y + h) / S, (x + w) / S, 1 - y / S];
+  const toUV = (x: number, y: number, w: number, h: number): UVRect => [x / S, 1 - (y + h) / SH, (x + w) / S, 1 - y / SH];
 
   // Wide signs: 4 x 4 grid of 384x96 in the left 1536px, top 512px... scaled x1.33.
   const WW = 384, WH = 96;
@@ -218,10 +224,163 @@ export function signAtlas(): SignAtlas {
     small.push(toUV(x, y, BW, BH));
   }
 
+  // --- Chinatown signs (bottom half of the atlas) -------------------------
+  const cjkTall: UVRect[] = [];
+  const cjkWide: UVRect[] = [];
+  const TALL_WORDS = ['中華街', '麵館', '茶室', '福', '龍門', '書店', '花屋', '食堂'];
+  const WIDE_WORDS = ['中華街', '龍鳳茶樓', '福記麵家', '金月餅店', '平安藥房', '明星唱片', '好運餃子', '茶'];
+  const cjkFont = (px: number) => `900 ${px}px "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans", sans-serif`;
+  for (let i = 0; i < 8; i++) {
+    const x = (i % 8) * 250 + 20;
+    const y = 2100;
+    const w = 110, h = 440;
+    g.fillStyle = i % 2 ? '#b8463f' : '#2f6b56';
+    g.fillRect(x, y, w, h);
+    g.strokeStyle = '#f4c95d';
+    g.lineWidth = 8;
+    g.strokeRect(x + 7, y + 7, w - 14, h - 14);
+    g.fillStyle = '#f4c95d';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const word = TALL_WORDS[i];
+    const px = Math.min(84, (h - 60) / word.length);
+    g.font = cjkFont(px);
+    [...word].forEach((ch, k) => g.fillText(ch, x + w / 2, y + 30 + px * 0.6 + k * ((h - 60) / word.length)));
+    cjkTall.push(toUV(x, y, w, h));
+  }
+  for (let i = 0; i < 8; i++) {
+    const x = (i % 4) * 500 + 12;
+    const y = 2600 + Math.floor(i / 4) * 150;
+    const w = 470, h = 118;
+    g.fillStyle = '#b8463f';
+    g.fillRect(x, y, w, h);
+    g.strokeStyle = '#f4c95d';
+    g.lineWidth = 8;
+    g.strokeRect(x + 6, y + 6, w - 12, h - 12);
+    g.fillStyle = '#f4c95d';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const word = WIDE_WORDS[i];
+    g.font = cjkFont(Math.min(80, (w - 60) / word.length));
+    g.fillText(word, x + w / 2, y + h / 2 + 4);
+    cjkWide.push(toUV(x, y, w, h));
+  }
+
+  // --- Murals: bold painted scenes for gable walls --------------------------
+  const murals: UVRect[] = [];
+  for (let i = 0; i < 6; i++) {
+    const x = (i % 3) * 680 + 10;
+    const y = 2920 + Math.floor(i / 3) * 580;
+    const M = 560;
+    paintMural(g, x, y, M, new Rng(900 + i), i);
+    murals.push(toUV(x, y, M, M));
+  }
+
   const tex = toTexture(c);
-  tex.anisotropy = 8;
-  atlas = { tex, wide, tall, small };
+  tex.anisotropy = 16;
+  atlas = { tex, wide, tall, small, cjkTall, cjkWide, murals };
   return atlas;
+}
+
+/** A bold, flat mural: sunsets, waves, a big cat, plants, a record, a moon. */
+function paintMural(g: CanvasRenderingContext2D, x: number, y: number, M: number, rng: Rng, kind: number) {
+  const pal = ['#f28fb0', '#8fd1b5', '#f6c453', '#7fb3e8', '#b99ae0', '#f5a25d', '#e9786f', '#fff1d6', '#3b2a3a'];
+  g.save();
+  g.beginPath();
+  g.rect(x, y, M, M);
+  g.clip();
+  g.fillStyle = rng.pick(pal);
+  g.fillRect(x, y, M, M);
+  const cx = x + M / 2, cy = y + M / 2;
+  switch (kind % 6) {
+    case 0: // sunset stripes and a sun
+      for (let k = 0; k < 7; k++) {
+        g.fillStyle = pal[(k + 2) % 7];
+        g.fillRect(x, y + M * 0.5 + k * M * 0.07, M, M * 0.07);
+      }
+      g.fillStyle = '#f6c453';
+      g.beginPath();
+      g.arc(cx, y + M * 0.5, M * 0.28, Math.PI, 0);
+      g.fill();
+      break;
+    case 1: // waves
+      for (let k = 0; k < 9; k++) {
+        g.strokeStyle = pal[k % 5 + 1];
+        g.lineWidth = M * 0.045;
+        g.beginPath();
+        for (let t = 0; t <= M; t += 8) g.lineTo(x + t, y + M * 0.1 + k * M * 0.1 + Math.sin(t / M * 12 + k) * M * 0.03);
+        g.stroke();
+      }
+      break;
+    case 2: // a big sleepy cat face
+      g.fillStyle = '#f5a25d';
+      g.beginPath();
+      g.arc(cx, cy + M * 0.08, M * 0.32, 0, Math.PI * 2);
+      g.moveTo(cx - M * 0.3, cy - M * 0.05);
+      g.lineTo(cx - M * 0.22, cy - M * 0.38);
+      g.lineTo(cx - M * 0.05, cy - M * 0.2);
+      g.moveTo(cx + M * 0.3, cy - M * 0.05);
+      g.lineTo(cx + M * 0.22, cy - M * 0.38);
+      g.lineTo(cx + M * 0.05, cy - M * 0.2);
+      g.fill();
+      g.strokeStyle = '#3b2a3a';
+      g.lineWidth = M * 0.025;
+      g.beginPath();
+      g.arc(cx - M * 0.12, cy + M * 0.05, M * 0.06, 0.2, Math.PI - 0.2);
+      g.moveTo(cx + M * 0.18, cy + M * 0.05);
+      g.arc(cx + M * 0.12, cy + M * 0.05, M * 0.06, 0.2, Math.PI - 0.2);
+      g.stroke();
+      break;
+    case 3: // monstera leaves
+      for (let k = 0; k < 7; k++) {
+        g.fillStyle = k % 2 ? '#57b39a' : '#8fd1b5';
+        g.beginPath();
+        g.ellipse(x + rng.range(0, M), y + rng.range(0, M), M * 0.22, M * 0.1, rng.range(0, 3), 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    case 4: // a vinyl record
+      g.fillStyle = '#3b2a3a';
+      g.beginPath();
+      g.arc(cx, cy, M * 0.36, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = '#5a4a5a';
+      g.lineWidth = 3;
+      for (let r = 0.12; r < 0.35; r += 0.03) {
+        g.beginPath();
+        g.arc(cx, cy, M * r, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.fillStyle = '#f28fb0';
+      g.beginPath();
+      g.arc(cx, cy, M * 0.1, 0, Math.PI * 2);
+      g.fill();
+      break;
+    default: // moon and stars
+      g.fillStyle = '#2f3550';
+      g.fillRect(x, y, M, M);
+      g.fillStyle = '#fff1d6';
+      g.beginPath();
+      g.arc(cx + M * 0.1, cy - M * 0.05, M * 0.25, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#2f3550';
+      g.beginPath();
+      g.arc(cx + M * 0.2, cy - M * 0.12, M * 0.22, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#f6c453';
+      for (let k = 0; k < 30; k++) g.fillRect(x + rng.range(0, M), y + rng.range(0, M), 6, 6);
+  }
+  // Painted border and a little brush texture
+  g.strokeStyle = 'rgba(255,255,255,0.2)';
+  for (let k = 0; k < 60; k++) {
+    g.lineWidth = rng.range(2, 8);
+    g.beginPath();
+    const sx = x + rng.range(0, M), sy = y + rng.range(0, M);
+    g.moveTo(sx, sy);
+    g.lineTo(sx + rng.range(-40, 40), sy + rng.range(-10, 10));
+    g.stroke();
+  }
+  g.restore();
 }
 
 /** Soft radial glow for lamp light pools and water reflections. */

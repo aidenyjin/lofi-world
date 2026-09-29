@@ -1,8 +1,8 @@
 # lofi world
 
-A procedurally generated rooftop city that lives in sync with procedurally generated lofi.
-The style is Cult of the Lamb crossed with Chillhop: a tilted 3D diorama with flat, ink-outlined cut-out
-characters, pastel sun-bleached colour, heavy haze and depth of field.
+A procedurally generated city you travel through, in sync with procedurally generated lofi.
+The style is Cult of the Lamb crossed with Chillhop: ink-outlined toon shapes, painterly surfaces,
+pastel sun-bleached colour, heavy haze and depth of field.
 
 ```
 npm install
@@ -15,7 +15,7 @@ npm run build    # static site in dist/
 ```
 music/engine.ts ──emits──▶ events.ts (bus) ──▶ world/world.ts
   Tone.js band               beat · bar · chord       camera director, palette,
-  on the audio clock         section · kick · hat     leaves, train, residents, post
+  on the audio clock         section · kick · hat     leaves, trains, traffic, post
 ```
 
 The music engine is the conductor. Every event is scheduled on the audio clock and delivered through
@@ -23,7 +23,7 @@ The music engine is the conductor. Every event is scheduled on the audio clock a
 
 | Music | World |
 | --- | --- |
-| beat | residents nod, strum, wave and squash; string lights and lamp pools breathe at night; boats bob; water glints |
+| beat | string lights and lamp pools breathe at night; boats bob; water glints |
 | hi-hat | leaves flutter |
 | bar | a wind gust through the leaves (bigger every 4 bars) |
 | chord | grade leans warm on major chords, cool on minor |
@@ -54,7 +54,7 @@ Everything is generated from the seed, chunk by chunk, as the camera drifts:
   tints at night and a few flicker blue with TV light.
 - **Rooftops:** water towers, stair bulkheads, AC units, antennas, smoking chimneys, solar panels,
   satellite dishes, skylights, glass greenhouses, patio umbrellas, gardens with string lights, laundry
-  that sways in the wind, lit billboards and residents.
+  that sways in the wind and lit billboards.
 - **Sky and life:** bird flocks that beat their wings in time, chimney smoke drifting with the wind,
   fireflies over the water after dark, falling leaves, the elevated train and the hazy skyline.
 
@@ -79,7 +79,11 @@ over the rooftops and a high vista with the train overtaking.
 - Screen-space god rays from the sun through the skyline and buildings
 - Bloom on neon, lit windows, lamps and water glints (stronger at night)
 - Real planar reflections in the canal, rippled and painted over
-- Sun-tinted rim light on buildings and characters
+- Sun-tinted rim light
+- Procedural world-space surface detail: plaster washes and rain streaks, brick courses and mortar,
+  dressed stone, wood grain, roof gravel, cracked asphalt, paving slabs, dappled foliage, glazed
+  tiles, bark and grass
+- Windows ray-cast furnished rooms behind reflective glass
 - 4× MSAA HDR render target, depth of field, pastel grade, light leak that follows the sun, grain
 
 The time of day cycles independently (golden hour → dusk → night → dawn → day, 20 minutes by default).
@@ -88,9 +92,13 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 
 - `src/music/theory.ts`: jazz progressions, voicings and voice leading
 - `src/music/engine.ts`: the band (FM keys, boom-bap drums, bass, melody, vinyl crackle) and arrangement
-- `src/world/city.ts`: chunked procedural city (buildings, rooftop props, residents, train line)
+- `src/world/city.ts`: chunked procedural city (districts, buildings, rooftop props, viaduct)
 - `src/world/geo.ts`: merges each chunk into a few draw calls; inverted-hull ink outlines
-- `src/world/textures.ts`: canvas-drawn placeholders (characters, signs, brush grain, leaves)
+- `src/world/textures.ts`: canvas-drawn sign atlas (shop, neon and Chinese signs, murals), brush grain, leaves
+- `src/world/hoods.ts`: neighbourhoods and corridor districts
+- `src/world/transport.ts`: traffic lanes, buses, trams and trains; `src/world/rail.ts`: the curved railway
+- `src/world/surfaces.ts`: procedural surface textures; `src/world/windows.ts`: glass and interiors
+- `src/world/water.ts`: reflective canal
 - `src/world/sky.ts`: sky dome and the hazy distant skyline
 - `src/fx/post.ts`: one-pass depth of field, pastel grade, light leak, paper grain and vignette
 - `src/palette.ts`: time-of-day palettes and sun path
@@ -111,29 +119,34 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 
 Keys: `M` mute, `H` hide HUD, `F` fullscreen.
 
-## Characters
+## Neighbourhoods
 
-Residents are procedural, built from the same toon primitives, brush grain and ink outlines as the city
-(`src/world/characters.ts`): bears, bunnies, cats, foxes, sheep, frogs and raccoons in random outfits,
-hats, scarves, headphones and glasses, standing or sitting.
+The city cycles through seven neighbourhoods (each visited once per cycle, in a seeded order), four
+chunks at a time. Each sets the palette, building material, heights, roof style, signage and what's
+strung over the street, and picks what fills the corridor (canal, street, market lane or park avenue):
 
-They animate on the GPU. Every part is tagged with a bone (body, head, left arm, right arm) plus its
-pivot, and the character shader in `src/world/materials.ts` poses them from the beat clock, so dozens of
-characters cost nothing per frame on the CPU:
-
-| Activity | Animation |
+| Neighbourhood | Character |
 | --- | --- |
-| listen | headphones on, strong head nods on the beat, swaying every two beats |
-| read | head bowed over a book, the odd page turn |
-| sip | lifts the mug to drink every so often |
-| paint | brush arm strokes at an easel, sun hat on |
-| strum | ukulele strummed on the eighth notes |
-| wave | arm raised and waving in time |
-| row | oars in the rowing boats |
-| idle | arms sway, head bobs |
+| Old town | pastel plaster, shopfronts and awnings, festoon bulbs |
+| Chinatown | red and gold facades, glazed pagoda roofs with upturned eaves, a paifang gate over the corridor, paper-lantern strings, Chinese signs |
+| Harbour | low brick warehouses with sawtooth roofs and tall chimneys, container yards with gantry cranes |
+| Neon | tall dark facades traced with neon strips, neon tube festoons, blade signs everywhere |
+| Arts | saturated colours and big painted murals on gable walls |
+| Garden | stone houses under ivy, lawns, ponds and gazebos |
+| Parkland | mostly parks: tree-lined avenues, fountains, ponds |
 
-Everyone squashes slightly on the beat. `tools/sprites/` still holds the earlier image-generation and
-cut-out scripts from the painted-sprite experiment.
+## Transport
+
+- **Railway:** a curved elevated viaduct (`src/world/rail.ts`) sweeps across the whole city and over the
+  canal. Two trains run in opposite directions every half-minute or so, and more are sent on section
+  changes. The articulated cars have rounded roofs, lit window bands, doors, bogies, cab noses with
+  headlights and pantographs. Buildings under the viaduct stay low, like railway arches, and pillars
+  keep clear of roads and the corridor.
+- **Trams:** articulated trams run both ways on the tram street, on tracks with overhead wires, and
+  pause at shelters.
+- **Buses, cars, vans and taxis:** these share the bus street and the corridor's street districts.
+- **No clipping:** road vehicles follow the one in front and keep a hard minimum gap. A 5-minute
+  simulation never let any gap drop below 0.9 units.
 
 ## Mobile
 

@@ -20,6 +20,10 @@ export class GeoBuilder {
   private uv: number[] = [];
   private col: number[] = [];
   private idx: number[] = [];
+  private surf: number[] = [];
+  private anySurf = false;
+  /** Surface type for following vertices (see Surf); drives procedural texture detail. */
+  surface = 0;
   /** Animation tags: from vertex `start` on, every vertex carries `tag`. */
   private tags: { start: number; tag: number[] }[] = [];
 
@@ -30,6 +34,11 @@ export class GeoBuilder {
   setTag(tag: number[]): this {
     this.tags.push({ start: this.pos.length / 3, tag });
     return this;
+  }
+
+  private pushSurf() {
+    this.surf.push(this.surface);
+    if (this.surface !== 0) this.anySurf = true;
   }
 
   get empty(): boolean {
@@ -67,6 +76,7 @@ export class GeoBuilder {
         // World-ish UVs so grain density is constant across faces.
         this.uv.push(((a + 1) / 2) * us / UV_SCALE + x * 0.013, ((b + 1) / 2) * vs / UV_SCALE + y * 0.017 + z * 0.011);
         this.col.push(tmpC.r, tmpC.g, tmpC.b);
+        this.pushSurf();
       }
       this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
@@ -90,6 +100,7 @@ export class GeoBuilder {
       // No UVs (welded blobs): project world position so the brush grain still shows.
       else this.uv.push((tmpV.x + tmpV.z * 0.7) / UV_SCALE, tmpV.y / UV_SCALE);
       this.col.push(tmpC.r, tmpC.g, tmpC.b);
+        this.pushSurf();
     }
     const index = geo.getIndex();
     if (index) for (let i = 0; i < index.count; i++) this.idx.push(base + index.getX(i));
@@ -141,6 +152,7 @@ export class GeoBuilder {
       this.nor.push(n[0], n[1], n[2]);
       this.uv.push(uvs[i][0], uvs[i][1]);
       this.col.push(tmpC.r, tmpC.g, tmpC.b);
+        this.pushSurf();
     });
     this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     return this;
@@ -156,6 +168,7 @@ export class GeoBuilder {
       this.nor.push(tmpN.x, tmpN.y, tmpN.z);
       this.uv.push(uvx[i], 0);
       this.col.push(tmpC.r, tmpC.g, tmpC.b);
+        this.pushSurf();
     });
     this.idx.push(base, base + 1, base + 2);
     return this;
@@ -167,6 +180,7 @@ export class GeoBuilder {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    if (this.anySurf) g.setAttribute('aSurf', new THREE.Float32BufferAttribute(this.surf, 1));
     if (this.tags.length) {
       const n = this.pos.length / 3;
       const bone = new Float32Array(n);
@@ -204,6 +218,14 @@ export class InkedBuilder {
   readonly outline = new GeoBuilder();
 
   constructor(private thickness = 0.09) {}
+
+  /** Surface type for the fill (outlines are plain ink). */
+  set surface(v: number) {
+    this.fill.surface = v;
+  }
+  get surface(): number {
+    return this.fill.surface;
+  }
 
   setTag(tag: number[]): this {
     this.fill.setTag(tag);

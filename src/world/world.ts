@@ -5,9 +5,9 @@ import { Post } from '../fx/post';
 import { CityChunk, CHUNK_W, CANAL_Z, districtAt, type District } from './city';
 import { Materials } from './materials';
 import { Sky, Skyline } from './sky';
-import { Train } from './train';
 import { Leaves } from './leaves';
-import { Traffic, Boats, Birds, Particles, Fireflies } from './life';
+import { Boats, Birds, Particles, Fireflies } from './life';
+import { Traffic, Railway } from './transport';
 import { CanalWater } from './water';
 
 export interface WorldOptions {
@@ -58,7 +58,7 @@ export class World {
   private post: Post;
   private sky = new Sky();
   private skyline: Skyline;
-  private train: Train;
+  private railway: Railway;
   private leaves: Leaves;
   private traffic: Traffic;
   private boats: Boats;
@@ -88,7 +88,6 @@ export class World {
   // Music-driven state
   private beatPulse = 0;
   private kickPulse = 0;
-  private beatPhase = 0;
   private lastBeatAt = -1;
   private beatSeconds = 0.8;
   private mood = 0;
@@ -123,15 +122,15 @@ export class World {
     this.farSkyline = new Skyline(opts.seed ^ 0x5eed, this.sky.skyUniforms);
     this.farSkyline.group.scale.z = -1;
     this.farSkyline.group.position.z = 2 * CANAL_Z;
-    this.train = new Train(this.mats);
+    this.railway = new Railway(this.mats);
     this.leaves = new Leaves(this.mats, () => this.lookTarget);
-    this.traffic = new Traffic(this.mats);
+    this.traffic = new Traffic(this.mats, (x) => districtAt(this.opts.seed, Math.floor(x / CHUNK_W)) === 'street');
     this.boats = new Boats(this.mats);
     this.birds = new Birds(this.mats);
     this.water = new CanalWater(this.renderer);
 
-    this.scene.fog = new THREE.Fog(0xffffff, 30, 230);
-    this.scene.add(this.sky.mesh, this.skyline.group, this.farSkyline.group, this.train.group, this.leaves.mesh, this.traffic.group, this.boats.group, this.birds.mesh, this.particles.points, this.fireflies.points, this.water.mesh, this.hemi, this.sun, this.sun.target);
+    this.scene.fog = new THREE.Fog(0xffffff, 45, 430);
+    this.scene.add(this.sky.mesh, this.skyline.group, this.farSkyline.group, this.railway.group, this.leaves.mesh, this.traffic.group, this.boats.group, this.birds.mesh, this.particles.points, this.fireflies.points, this.water.mesh, this.hemi, this.sun, this.sun.target);
 
     this.sun.castShadow = true;
     const sc = this.sun.shadow.camera;
@@ -190,13 +189,13 @@ export class World {
         this.shotToggle = !this.shotToggle;
         this.setShot(this.shotToggle ? SHOTS.rooftops : SHOTS.canal, 0.3);
         this.leafDensity = 0.7;
-        if (Math.random() < 0.5) this.train.dispatch(16);
+        this.railway.dispatch(this.camX);
         break;
       case 'bridge':
         // Pull focus out to the train line and send a train through.
         this.setShot(SHOTS.vista, 0.25);
         this.leafDensity = 0.9;
-        this.train.dispatch(14);
+        this.railway.dispatch(this.camX);
         this.leaves.gustNow(2);
         break;
       case 'breakdown':
@@ -224,6 +223,7 @@ export class World {
   /** Start the journey somewhere else along the city. */
   startAt(x: number) {
     this.camX = x;
+    this.traffic.reset(x);
     for (const c of this.chunks.values()) c.dispose();
     this.chunks.clear();
     this.updateChunks(true);
@@ -231,7 +231,7 @@ export class World {
 
   /** Debug: send a train through now. */
   dispatchTrain() {
-    this.train.dispatch(40, 30);
+    this.railway.debugPlace(this.camX);
   }
 
   private resize() {
@@ -252,7 +252,7 @@ export class World {
   private updateChunks(all = false) {
     // Mostly ahead of the camera: that's where it's heading.
     const from = Math.floor((this.camX - 45) / CHUNK_W);
-    const to = Math.floor((this.camX + 200) / CHUNK_W);
+    const to = Math.floor((this.camX + 330) / CHUNK_W);
     let built = 0;
     for (let i = from; i <= to; i++) {
       for (const mirrored of [false, true]) {
@@ -285,7 +285,6 @@ export class World {
     this.beatPulse *= Math.exp(-dt * 5);
     this.kickPulse *= Math.exp(-dt * 9);
     this.mood = damp(this.mood, this.moodTarget, 0.6, dt);
-    this.beatPhase = this.lastBeatAt >= 0 ? Math.min(1, (t - this.lastBeatAt) / this.beatSeconds) : (t / 0.8) % 1;
 
     // --- Camera -------------------------------------------------------------
     const s = this.shot;
@@ -306,7 +305,7 @@ export class World {
     this.groundLift = damp(this.groundLift, DISTRICT_LIFT[ahead], 0.5, dt);
     // Gentle weave and bob, like drifting in a boat or on the breeze.
     const low = Math.max(0, 1 - (s.height - 3.6) / 10);
-    const weave = Math.sin(t * 0.11) * (1.1 * low + 2.5 * (1 - low));
+    const weave = Math.sin(t * 0.11) * (0.5 * low + 2.5 * (1 - low));
     const bob = Math.sin(t * 0.9) * 0.08 * low + Math.sin(t * 0.21) * 0.4 * (1 - low);
     this.camera.position.set(this.camX, s.height + bob + this.groundLift * low, s.lateral + weave);
     this.lookTarget.set(this.camX + s.ahead, s.lookY + this.groundLift * low, s.lookZ + weave * 0.4 + Math.sin(t * 0.07) * 2.5);
@@ -338,9 +337,9 @@ export class World {
 
     // --- World --------------------------------------------------------------
     this.updateChunks();
-    this.train.update(dt, this.camX);
+    this.railway.update(dt, this.camX);
     this.leaves.update(dt, t, this.leafDensity);
-    this.traffic.update(dt, this.camX, t);
+    this.traffic.update(dt, this.camX);
     this.boats.update(dt, this.camX, t, this.beatPulse, (x) => districtAt(this.opts.seed, Math.floor(x / CHUNK_W)) === 'canal');
     this.birds.update(dt, this.camX, t, this.beatSeconds, this.mats.ink.color);
     const chimneys: THREE.Vector3[] = [];
@@ -352,9 +351,6 @@ export class World {
     this.particles.update(dt, this.camX, chimneys, fountains, this.leaves.wind, p.nightness, p.haze, this.renderer.domElement.height);
     this.fireflies.update(t, this.camX, p.nightness, this.beatPulse);
     this.water.update(this.camX, p, t, this.beatPulse);
-    // Characters animate on the GPU; just feed the rig its clock.
-    this.mats.rigUniforms.uBeatPh.value = this.beatPhase;
-    this.mats.rigUniforms.uBeatLen.value = this.beatSeconds;
 
     // --- Post ---------------------------------------------------------------
     this.post.update(this.camera, p, t, this.sunDir);

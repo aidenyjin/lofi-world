@@ -165,8 +165,8 @@ export class Skyline {
   }
 
   update(cameraX: number, p: ResolvedPalette) {
-    const from = Math.floor((cameraX - 320) / SKY_CHUNK);
-    const to = Math.floor((cameraX + 360) / SKY_CHUNK);
+    const from = Math.floor((cameraX - 200) / SKY_CHUNK);
+    const to = Math.floor((cameraX + 620) / SKY_CHUNK);
     for (let i = from; i <= to; i++) if (!this.chunks.has(i)) this.build(i);
     for (const [i, g] of this.chunks) {
       if (i < from - 1 || i > to + 1) {

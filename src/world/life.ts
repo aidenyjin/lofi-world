@@ -1,10 +1,8 @@
 import * as THREE from 'three';
 import { InkedBuilder, GeoBuilder } from './geo';
 import type { Materials } from './materials';
-import { buildBoat, buildCar, CANAL_Z, TRAFFIC_STREETS, WATER_Y } from './city';
+import { buildBoat, CANAL_Z, WATER_Y } from './city';
 import { puffTexture } from './textures';
-import { buildCharacter, Act } from './characters';
-import { Rng } from '../rng';
 
 // Things that move on their own: traffic, boats, birds, smoke, spray and
 // fireflies. Each keeps a fixed pool of objects recycled around the camera,
@@ -32,43 +30,6 @@ interface Mover {
   phase: number;
 }
 
-/** Cars driving both ways along the two middle streets, headlights on. */
-export class Traffic {
-  readonly group = new THREE.Group();
-  private cars: Mover[] = [];
-
-  constructor(mats: Materials) {
-    const colors = ['#f0a497', '#a9c9f0', '#f8dea0', '#bde2d0', '#c8b5e6', '#fff1d6', '#e9786f'];
-    let i = 0;
-    for (const streetZ of TRAFFIC_STREETS) {
-      for (const dir of [1, -1] as const) {
-        for (let k = 0; k < 3; k++) {
-          const ink = new InkedBuilder(0.07);
-          const lights = new GeoBuilder();
-          buildCar(ink, lights, 0, 0.01, 0, 0, colors[i++ % colors.length], Math.random() < 0.25);
-          const obj = meshesFrom(ink, lights, mats);
-          obj.rotation.y = dir === 1 ? 0 : Math.PI;
-          obj.position.z = streetZ + (dir === 1 ? 0.8 : -0.8);
-          this.group.add(obj);
-          this.cars.push({ obj, x: (k / 3) * (SPAN_AHEAD + SPAN_BEHIND) - SPAN_BEHIND + Math.random() * 20, speed: 3 + Math.random() * 3, dir, phase: Math.random() * 10 });
-        }
-      }
-    }
-  }
-
-  update(dt: number, camX: number, time: number) {
-    for (const c of this.cars) {
-      c.x += c.speed * c.dir * dt;
-      const rel = c.x - camX;
-      if (rel > SPAN_AHEAD) c.x = camX - SPAN_BEHIND;
-      if (rel < -SPAN_BEHIND) c.x = camX + SPAN_AHEAD;
-      c.obj.position.x = c.x;
-      // A little suspension bounce
-      c.obj.position.y = Math.abs(Math.sin(time * 9 + c.phase)) * 0.025;
-    }
-  }
-}
-
 /** Rowing boats drifting along the canal, some with a passenger. */
 export class Boats {
   readonly group = new THREE.Group();
@@ -83,12 +44,6 @@ export class Boats {
       buildBoat(ink, lights, 0, 0, colors[i], i === 1, 0);
       const obj = meshesFrom(ink, lights, mats);
       obj.position.set(0, WATER_Y, CANAL_Z + (dir === 1 ? 0.7 : -0.7));
-      if (i !== 1) {
-        // A rower, animated by the same rig as the rooftop residents.
-        const who = new InkedBuilder(0.045);
-        buildCharacter(who, new Rng(31 + i * 7), -0.2, 0.3, 0, { pose: 'sit', act: Act.Row, scale: 1.0, yaw: dir === 1 ? 0.2 : -0.2 });
-        obj.add(new THREE.Mesh(who.fill.build(), mats.charToon), new THREE.Mesh(who.outline.build(), mats.charInk));
-      }
       this.group.add(obj);
       this.boats.push({ obj, x: (i / 4) * (SPAN_AHEAD + SPAN_BEHIND) - SPAN_BEHIND, speed: 1.2 + Math.random() * 0.8, dir: dir as 1 | -1, phase: Math.random() * 6 });
     }
