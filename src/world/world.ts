@@ -20,8 +20,8 @@ export interface WorldOptions {
 }
 
 // Camera "shots". The camera always travels forward (+X) through the city;
-// the director eases between these on section changes, the way a lofi video
-// cuts to a new view when the track moves on.
+// the viewer picks the shot (view button or keys 1-3) and the camera eases
+// across to it. The music never changes the view on its own.
 interface Shot {
   height: number;
   lateral: number; // camera z
@@ -95,7 +95,6 @@ export class World {
   private mood = 0;
   private moodTarget = 0;
   private leafDensity = 0.35;
-  private shotToggle = false;
 
   timeOfDay = 0;
   debugNoPost = false;
@@ -186,40 +185,38 @@ export class World {
     if (name !== 'intro') this.birds.startle();
     switch (name) {
       case 'intro':
-        this.setShot(SHOTS.canal, 0.25);
         this.leafDensity = 0.3;
         break;
       case 'groove':
-        this.shotToggle = !this.shotToggle;
-        this.setShot(this.shotToggle ? SHOTS.rooftops : SHOTS.canal, 0.3);
         this.leafDensity = 0.7;
         this.railway.dispatch(this.camX);
         break;
       case 'bridge':
-        // Pull focus out to the train line and send a train through.
-        this.setShot(SHOTS.vista, 0.25);
         this.leafDensity = 0.9;
         this.railway.dispatch(this.camX);
         this.leaves.gustNow(2);
         break;
       case 'breakdown':
-        this.setShot({ ...SHOTS.canal, aperture: 0.9, focus: 16, speed: 2.2 }, 0.3);
         this.leafDensity = 0.4;
         break;
     }
   }
 
   private shotLocked = false;
+  view: ShotName = 'canal';
 
-  private setShot(shot: Shot, speed: number) {
+  /** Ease the camera across to a chosen view. */
+  setView(name: ShotName) {
     if (this.shotLocked) return;
-    this.shotTarget = shot;
-    this.shotSpeed = speed;
+    this.view = name;
+    this.shotTarget = SHOTS[name];
+    this.shotSpeed = 0.6;
   }
 
   /** For screenshots/debugging: jump straight to a named shot. */
   snapShot(name: ShotName) {
     this.shotLocked = true;
+    this.view = name;
     this.shotTarget = SHOTS[name];
     this.shot = { ...SHOTS[name] };
   }

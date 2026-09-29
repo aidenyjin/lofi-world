@@ -8,7 +8,7 @@ import type { UVRect } from './textures';
 import { windowColor } from './windows';
 import { areaAt, RUN, type District, type Hood, type HoodName } from './hoods';
 import { Surf } from './surfaces';
-import { railZ, railSlope, railYaw, trackPoint, railY, inTunnel, portalsIn, stationsIn, STATION_LEN, STATION_NAMES, DECK_H, TRACK_OFFSET } from './rail';
+import { railZ, railSlope, railYaw, trackPoint, railY, inTunnel, portalsIn, stationsIn, STATION_LEN, STATION_NAMES, DECK_H, TRACK_OFFSET, SHED, type Station } from './rail';
 
 // The city is generated in chunks along +X (the direction the camera drifts).
 // Each chunk is a strip of blocks receding into the distance:
@@ -162,6 +162,66 @@ class Occupancy {
     }
     return null;
   }
+}
+
+/** A way up to the platforms: a stair tower beside the line (world coordinates). */
+interface Tower {
+  x: number;
+  z: number;
+  side: 1 | -1;
+  yaw: number;
+  height: number;
+  /** Where along the line it stands. */
+  trackX: number;
+  /** Street-level stations get a footbridge over the tracks between their two towers. */
+  bridge: boolean;
+}
+
+const TOWER_OFF = 5.0; // tower centre, from the track centreline
+const towerCache = new Map<number, Tower[]>();
+
+/** Is this world point on open ground (not the corridor, a street, or an avenue)? */
+function solidGround(x: number, z: number, pad: number): boolean {
+  if (z > CANAL_Z0 - 0.4 - pad && z < CANAL_Z1 + 0.4 + pad) return false;
+  for (const row of [2, 3, 4]) {
+    const a = rowFront(row), b = a + STREET;
+    for (const [z0, z1] of [[a, b], [2 * CANAL_Z - b, 2 * CANAL_Z - a]]) if (z > z0 - pad && z < z1 + pad) return false;
+  }
+  const lx = ((x % CHUNK_W) + CHUNK_W) % CHUNK_W;
+  if (lx < AVENUE_W + pad || lx > CHUNK_W - pad) return false;
+  return true;
+}
+
+/** Stair towers for a station: one per platform, where there's solid ground to stand on. */
+function stationTowers(st: Station): Tower[] {
+  const hit = towerCache.get(st.x);
+  if (hit) return hit;
+  const out: Tower[] = [];
+  const at = (x: number, side: 1 | -1) => ({ ...trackPoint(x, side * TOWER_OFF), side });
+  const offsets = [0, 4, -4, 8, -8, 12, -12, 16, -16];
+  const ok = (p: { x: number; z: number }) => solidGround(p.x, p.z, 1.5);
+  if (st.elevated) {
+    for (const side of [-1, 1] as const) {
+      for (const dx of offsets) {
+        const p = at(st.x + dx, side);
+        if (!ok(p)) continue;
+        out.push({ x: p.x, z: p.z, side, yaw: railYaw(st.x + dx), height: railY(st.x + dx) + 3.3, trackX: st.x + dx, bridge: false });
+        break;
+      }
+    }
+  } else {
+    // Both towers at the same spot, joined by a footbridge.
+    for (const dx of offsets) {
+      const a = at(st.x + dx, -1), b = at(st.x + dx, 1);
+      if (!ok(a) || !ok(b)) continue;
+      const yaw = railYaw(st.x + dx);
+      out.push({ x: a.x, z: a.z, side: -1, yaw, height: 7.6, trackX: st.x + dx, bridge: true }, { x: b.x, z: b.z, side: 1, yaw, height: 7.6, trackX: st.x + dx, bridge: false });
+      break;
+    }
+  }
+  if (towerCache.size > 200) towerCache.clear();
+  towerCache.set(st.x, out);
+  return out;
 }
 
 /** Where viaduct pillars stand (world X), every 12 units offset off the avenues. */
@@ -468,10 +528,15 @@ export class CityChunk {
         for (let x = 0.6; x < CHUNK_W; x += 2.4) ink.fill.quad(x, 0.02, zc, 1.1, 0.12, 'py', '#f3e7c9');
         for (let z = zc - 1.8; z < zc + 1.9; z += 0.5) ink.fill.quad(AVENUE_W + 0.9, 0.02, z, 1.3, 0.26, 'py', '#f6eee0');
       }
+      // Sidewalk and kerb, open where the avenue meets the street so turning cars drive through
+      const r0 = WALK * 0.8, r1 = AVENUE_W - WALK * 0.8;
       ink.surface = Surf.Paving;
-      ink.fill.box(CHUNK_W / 2, 0.08, half0 + 0.75, CHUNK_W + 0.02, 0.16, 1.5, PAVEMENT);
+      ink.fill.box((r1 + CHUNK_W) / 2, 0.08, half0 + 0.75, CHUNK_W - r1 + 0.02, 0.16, 1.5, PAVEMENT);
+      ink.fill.box(r0 / 2, 0.08, half0 + 0.75, r0, 0.16, 1.5, PAVEMENT);
+      ink.surface = Surf.Asphalt;
+      ink.fill.quad(AVENUE_W / 2, 0.012, half0 + 0.75, r1 - r0, 1.5, 'py', ASPHALT);
       ink.surface = Surf.Plain;
-      ink.fill.box(CHUNK_W / 2, 0.17, half0 + 1.44, CHUNK_W + 0.02, 0.04, 0.12, KERB);
+      ink.fill.box((r1 + CHUNK_W) / 2, 0.17, half0 + 1.44, CHUNK_W - r1 + 0.02, 0.04, 0.12, KERB);
       const lampX = rng.range(3, 8);
       for (let x = lampX; x < CHUNK_W - 1; x += 9) this.kerb(1, x, 0.3, (kx) => this.lampPost(b, kx, half0 + 1.3, 0.16, true));
       for (let x = lampX + 4.5; x < CHUNK_W - 1; x += 9) {
@@ -726,12 +791,12 @@ export class CityChunk {
     }
 
     // The avenue: road, sidewalks, parked cars and lamps between the streets.
-    const segments: [number, number][] = [];
-    for (let row = 1; row < ROWS; row++) segments.push([rowFront(row) - BLOCK_DEPTH, rowFront(row)]);
+    const segments: [number, number, number][] = [];
+    for (let row = 1; row < ROWS; row++) segments.push([rowFront(row) - BLOCK_DEPTH, rowFront(row), row]);
     ink.surface = Surf.Asphalt;
     ink.fill.quad(AVENUE_W / 2, 0.012, (CANAL_Z0 - 110) / 2, roadX1 - roadX0, CANAL_Z0 + 110, 'py', ASPHALT);
     ink.surface = Surf.Plain;
-    for (const [za, zb] of segments) {
+    for (const [za, zb, row] of segments) {
       const z0 = Math.min(za, zb), z1 = Math.max(za, zb);
       const zc = (z0 + z1) / 2, len = z1 - z0;
       ink.surface = Surf.Paving;
@@ -740,7 +805,8 @@ export class CityChunk {
       ink.surface = Surf.Paving;
       ink.fill.box((roadX1 + AVENUE_W) / 2, 0.08, zc, AVENUE_W - roadX1, 0.16, len, PAVEMENT);
       ink.surface = Surf.Plain;
-      if (len > 8 && rng.chance(0.7)) {
+      // (Rows 1-2 carry the cars turning between the corridor and the side streets: no parking.)
+      if (row >= 3 && len > 8 && rng.chance(0.7)) {
         const cz = rng.range(z0 + 2, z1 - 2);
         buildCar(ink, null, roadX0 + 0.62, 0.01, cz, Math.PI / 2, rng.pick(CAR_COLORS), rng.chance(0.25));
       }
@@ -2127,7 +2193,12 @@ export class CityChunk {
         ink.boxRot(at(t, 0.02), rot, S.set(0.22, 0.06, 1.1), '#9c7a66', false);
       }
       const st = inStation(wx);
-      if (st) this.platform(b, wx, y, rot, st.elevated, Math.abs(wx - st.x) <= step / 2 ? st.name : -1, lx);
+      if (st) {
+        // Leave the canopy open where the footbridge stairs come down.
+        const br = stationTowers(st).find((t) => t.bridge);
+        const open = !!br && wx > br.trackX - 1 && wx < br.trackX + 6;
+        this.platform(b, wx, y, rot, st.elevated, Math.abs(wx - st.x) <= step / 2 ? st.name : -1, lx, open);
+      }
     }
 
     // Pillars under the viaduct (kept off roads and the corridor).
@@ -2170,26 +2241,87 @@ export class CityChunk {
       }
       if (line.length > 1) b.wires.push(line);
     }
-    // Tunnel mouths
-    for (const px of portalsIn(x0, x0 + CHUNK_W)) {
-      const z = railZ(px);
-      const yaw = railYaw(px);
-      const lx = px - x0;
-      ink.surface = Surf.Stone;
-      ink.box(lx, 2.6, z, 3.0, 5.2, 6.4, STONE, yaw);
-      ink.surface = Surf.Plain;
-      ink.box(lx, 5.35, z, 3.3, 0.3, 6.8, KERB, yaw);
-      const dir = new THREE.Vector3(1, 0, 0).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
-      for (const sgn of [-1, 1]) {
-        const face = P.set(lx + dir.x * 1.52 * sgn, 2.0, z + dir.z * 1.52 * sgn);
+    // Tunnel mouths, and the grassy shed behind each one where the trains dip below the street
+    for (const { x: px, into } of portalsIn(x0 - SHED - 2, x0 + CHUNK_W + SHED + 2)) {
+      if (px >= x0 && px < x0 + CHUNK_W) {
+        const z = railZ(px);
+        const yaw = railYaw(px);
+        const lx = px - x0;
+        ink.surface = Surf.Stone;
+        ink.box(lx, 2.6, z, 3.0, 5.2, 6.4, STONE, yaw);
+        ink.surface = Surf.Plain;
+        ink.box(lx, 5.35, z, 3.3, 0.3, 6.8, KERB, yaw);
+        const dir = new THREE.Vector3(1, 0, 0).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+        const face = P.set(lx - dir.x * 1.52 * into, 2.0, z - dir.z * 1.52 * into);
         b.dark.geometry(BOX1, m4.compose(face, q.setFromEuler(eul.set(0, yaw, 0)), S.set(0.05, 3.6, 4.4)), '#2a2238');
       }
+      for (let t = 1; t < SHED + 1; t += 2) {
+        const wx = px + into * t;
+        if (wx < x0 || wx >= x0 + CHUNK_W) continue;
+        const z = railZ(wx);
+        const yaw = railYaw(wx);
+        ink.surface = Surf.Grass;
+        ink.boxRot(P.set(wx - x0, 2.1, z), eul.set(0, yaw, 0), S.set(2.1, 4.2, 6.4), '#8fb98a', false);
+        ink.surface = Surf.Plain;
+        if (rng.chance(0.5)) ink.fill.geometry(BLOB, mat(wx - x0, 4.3, z + rng.range(-2, 2), 0.7, 0.5, 0.7), rng.pick(['#8fb98a', '#9fd49a', '#7aa874']));
+      }
     }
-    void rng;
+
+    // Stair towers up to the platforms (and footbridges at street-level stations)
+    for (const st of stations) for (const tw of stationTowers(st)) if (tw.x >= x0 && tw.x < x0 + CHUNK_W) this.stationTower(b, tw, st.name);
+  }
+
+  /** A brick stair tower with a lit doorway, a tall stair window and the station's name. */
+  private stationTower(b: Builders, tw: Tower, name: number) {
+    const { ink } = b;
+    const lx = tw.x - this.x0;
+    const H = tw.height;
+    const out = new THREE.Vector3(0, 0, tw.side).applyAxisAngle(THREE.Object3D.DEFAULT_UP, tw.yaw); // away from the tracks
+    const along = new THREE.Vector3(1, 0, 0).applyAxisAngle(THREE.Object3D.DEFAULT_UP, tw.yaw);
+    const face = (d: number, y: number) => new THREE.Vector3(lx + out.x * d, y, tw.z + out.z * d);
+    ink.surface = Surf.Brick;
+    ink.box(lx, H / 2, tw.z, 2.6, H, 2.0, '#c9785c', tw.yaw);
+    ink.surface = Surf.Plain;
+    ink.box(lx, H + 0.15, tw.z, 3.0, 0.3, 2.4, '#fff1d6', tw.yaw);
+    ink.fill.box(lx, 0.4, tw.z, 2.7, 0.8, 2.1, STONE, tw.yaw);
+    const rot = q.setFromEuler(eul.set(0, tw.yaw, 0)).clone();
+    // Doorway at the street, facing away from the line
+    const door = face(1.02, 1.15);
+    b.emissive.geometry(BOX1, m4.compose(door, rot, S.set(1.1, 2.1, 0.04)), '#ffd9a0');
+    ink.fill.geometry(BOX1, m4.compose(face(1.03, 2.3), rot, S.set(1.4, 0.15, 0.06)), '#fff1d6');
+    // Tall stair window
+    if (H > 6) b.glass.geometry(BOX1, m4.compose(face(1.02, (2.8 + H - 0.8) / 2), rot, S.set(1.0, H - 3.6, 0.04)), '#ffffff');
+    // Name board and a glowing roundel over the door
+    const uv = this.mats.atlas.stations[name % STATION_NAMES.length];
+    const board = face(1.06, 2.95);
+    q.setFromEuler(eul.set(0, tw.yaw + (tw.side === 1 ? 0 : Math.PI), 0));
+    ink.fill.geometry(BOX1, m4.compose(face(1.02, 2.95), rot, S.set(2.3, 0.6, 0.06)), '#2f4f8a');
+    b.signs.geometryUV(SIGN_PLANE, m4.compose(board, q, S.set(2.1, 0.46, 1)), '#ffffff', uv);
+    const disc = new THREE.Euler(Math.PI / 2, tw.yaw, 0, 'YXZ');
+    for (const k of [-1, 1]) {
+      const p = face(1.05, 2.95).addScaledVector(along, k * 1.45);
+      b.emissive.geometry(CYL, m4.compose(p, new THREE.Quaternion().setFromEuler(disc), S.set(0.28, 0.05, 0.28)), '#e9786f');
+    }
+    if (tw.bridge) {
+      // Covered footbridge across both tracks to the tower on the far side
+      const mid = new THREE.Vector3(lx, 0, tw.z).addScaledVector(out, -TOWER_OFF);
+      const span = TOWER_OFF * 2 - 2.0;
+      ink.box(mid.x, 6.0, mid.z, 1.8, 0.35, span, '#e8dcd0', tw.yaw);
+      for (const k of [-1, 1]) {
+        const w = mid.clone().addScaledVector(along, k * 0.85);
+        b.glass.geometry(BOX1, m4.compose(w.setY(6.8), rot, S.set(0.04, 1.3, span)), '#ffffff');
+      }
+      ink.box(mid.x, 7.55, mid.z, 2.2, 0.15, span + 0.4, '#c8b5e6', tw.yaw);
+      // Stairs down to each platform
+      for (const k of [-1, 1]) {
+        const p = mid.clone().addScaledVector(out, k * 3.0).addScaledVector(along, 2.15);
+        ink.boxRot(P.set(p.x, 3.4, p.z), new THREE.Euler(0, tw.yaw, -0.9, 'YXZ'), S.set(6.8, 0.2, 1.2), '#e8dcd0');
+      }
+    }
   }
 
   /** Platforms, canopy, benches, lamps and a name board, one 2-unit slice at a time. */
-  private platform(b: Builders, wx: number, y: number, rot: THREE.Euler, elevated: boolean, name: number, lx: number) {
+  private platform(b: Builders, wx: number, y: number, rot: THREE.Euler, elevated: boolean, name: number, lx: number, open = false) {
     const { ink } = b;
     const x0 = this.x0;
     const at = (off: number, dy: number) => {
@@ -2205,6 +2337,7 @@ export class CityChunk {
     ink.surface = Surf.Plain;
     const odd = Math.round(lx / 2) % 3 === 0;
     for (const side of [-1, 1]) {
+      if (open) continue;
       if (odd) ink.boxRot(at(side * 3.4, 1.8), rot, S.set(0.12, 2.6, 0.12), '#6b5c78', false);
       ink.boxRot(at(side * 3.0, 3.15), rot, S.set(len, 0.12, 2.4), '#c8b5e6', false);
       if (odd) {
@@ -2252,11 +2385,25 @@ export class CityChunk {
       const z = railZ(px);
       if (z > zMin - 1.5 && z < zMax + 1.5 && railY(px) >= 4 && !inTunnel(px)) limit = 0;
     }
-    for (const px of portalsIn(this.x0 + lx0 - 4, this.x0 + lx1 + 4)) {
-      const z = railZ(px);
-      if (z > zMin - 4 && z < zMax + 4) limit = 0;
+    for (const { x: px, into } of portalsIn(this.x0 + lx0 - 4 - SHED, this.x0 + lx1 + 4 + SHED)) {
+      const a = Math.min(px, px + into * SHED), c = Math.max(px, px + into * SHED);
+      if (this.x0 + lx1 < a - 4 || this.x0 + lx0 > c + 4) continue;
+      const za2 = Math.min(railZ(a), railZ(c)), zb2 = Math.max(railZ(a), railZ(c));
+      if (zb2 > zMin - 4 && za2 < zMax + 4) limit = 0;
+    }
+    // Station stair towers need their ground
+    for (const st of stationsIn(this.x0 + lx0 - 30, this.x0 + lx1 + 30)) {
+      for (const tw of stationTowers(st)) {
+        if (tw.x > this.x0 + lx0 - 2 && tw.x < this.x0 + lx1 + 2 && tw.z > zMin - 2 && tw.z < zMax + 2) limit = 0;
+      }
     }
     return limit;
+  }
+
+  private nearTower(lx: number, lz: number): boolean {
+    const wx = this.x0 + lx, wz = this.wz(lz);
+    for (const st of stationsIn(wx - 30, wx + 30)) for (const tw of stationTowers(st)) if (Math.abs(tw.x - wx) < 2.4 && Math.abs(tw.z - wz) < 2.4) return true;
+    return false;
   }
 
   /** A lot given over to the railway: gravel, shrubs. */
@@ -2267,6 +2414,7 @@ export class CityChunk {
     ink.surface = Surf.Foliage;
     for (let i = 0; i < rng.int(2, 5); i++) {
       const x = cx + rng.range(-w / 2 + 0.6, w / 2 - 0.6), z = cz + rng.range(-d / 2 + 0.6, d / 2 - 0.6);
+      if (this.nearTower(x, z)) continue;
       ink.geometry(BLOB, mat(x, 0.35, z, 0.55, 0.45, 0.55), rng.pick(['#8fb98a', '#9fd49a', '#7aa874']));
     }
     ink.surface = Surf.Plain;

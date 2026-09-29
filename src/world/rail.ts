@@ -135,16 +135,40 @@ export function inTunnel(x: number): boolean {
   return x > s.x0 + RAMP && x < s.x1 - RAMP;
 }
 
+export interface Portal {
+  x: number;
+  /** Which way (along X) the tunnel runs from this mouth. */
+  into: 1 | -1;
+}
+
 /** Tunnel portals (world X) near a range, for building the portal structures. */
-export function portalsIn(x0: number, x1: number): number[] {
-  const out: number[] = [];
-  for (const b of [Math.floor(x0 / BLOCK), Math.floor(x1 / BLOCK)]) {
+export function portalsIn(x0: number, x1: number): Portal[] {
+  const out: Portal[] = [];
+  for (let b = Math.floor(x0 / BLOCK); b <= Math.floor(x1 / BLOCK); b++) {
     for (const s of lowSections(b)) {
       if (!s.tunnel) continue;
-      for (const p of [s.x0 + RAMP, s.x1 - RAMP]) if (p >= x0 && p < x1 && !out.includes(p)) out.push(p);
+      for (const [p, into] of [[s.x0 + RAMP, 1], [s.x1 - RAMP, -1]] as const) {
+        if (p >= x0 && p < x1 && !out.some((o) => o.x === p)) out.push({ x: p, into });
+      }
     }
   }
   return out;
+}
+
+/** Length of the covered shed behind each tunnel mouth, where trains dive below the street. */
+export const SHED = 14;
+
+/**
+ * Height a train runs at: the track, except inside a tunnel, where it dips
+ * under the ground inside the portal shed so it never has to vanish.
+ */
+export function trainY(x: number): number {
+  const s = lowSectionAt(x);
+  if (!s || !s.tunnel) return railY(x);
+  const a = s.x0 + RAMP, b = s.x1 - RAMP;
+  if (x <= a || x >= b) return railY(x);
+  const t = Math.min(1, Math.min(x - a, b - x) / SHED);
+  return GROUND_Y - 5.5 * t * t * (3 - 2 * t);
 }
 
 export const STATION_LEN = 44;

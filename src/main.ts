@@ -62,6 +62,31 @@ document.getElementById('play')!.addEventListener('click', () => begin(false));
 if (import.meta.env.DEV) Object.assign(window, { __lofi: { world, engine, Tone } });
 if (params.has('silent')) begin(true);
 
+// Views: picked by the viewer, never switched automatically.
+const VIEWS = ['canal', 'rooftops', 'vista'] as const;
+const VIEW_LABELS: Record<(typeof VIEWS)[number], string> = { canal: 'street level', rooftops: 'rooftops', vista: 'high vista' };
+const viewBtn = document.getElementById('view')!;
+const toast = document.getElementById('toast')!;
+let toastTimer = 0;
+function setView(name: (typeof VIEWS)[number], announce = true) {
+  world.setView(name);
+  try { localStorage.setItem('lofi-view', name); } catch { /* storage unavailable */ }
+  if (!announce) return;
+  toast.textContent = `view: ${VIEW_LABELS[name]}`;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove('show'), 1400);
+}
+function cycleView() {
+  setView(VIEWS[(VIEWS.indexOf(world.view) + 1) % VIEWS.length]);
+}
+viewBtn.addEventListener('click', cycleView);
+if (!shot) {
+  let saved: string | null = null;
+  try { saved = localStorage.getItem('lofi-view'); } catch { /* storage unavailable */ }
+  if (saved === 'rooftops' || saved === 'vista') setView(saved, false);
+}
+
 const browseBtn = document.getElementById('browse')!;
 function toggleBrowse() {
   world.setBrowse(!world.browse);
@@ -90,6 +115,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'h') hud.hidden = !hud.hidden;
   if (e.key === 'f') toggleFullscreen();
   if (e.key === 'b') toggleBrowse();
+  if (e.key === 'v') cycleView();
+  if (e.key === '1' || e.key === '2' || e.key === '3') setView(VIEWS[Number(e.key) - 1]);
 });
 
 // Resume audio when coming back to the tab (mobile browsers suspend it).
