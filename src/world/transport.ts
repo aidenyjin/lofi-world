@@ -175,10 +175,13 @@ interface Mover {
   cleared: boolean;
 }
 
-const R = 1.4; // corner radius
+const R = 2.2; // corner radius
+const LEAD = 1.5; // straight run-in and run-out at each end of a turn, so the heading never jumps
 const AV = 0.65; // avenue lanes sit this far either side of the avenue centre
 const JUNCTION = 2; // avenue centre, local x within each chunk
 const CORRIDOR_CAP = 8;
+/** Where (relative to the avenue centre) a car leaves its lane to start turning. */
+const TRIG = AV + R + LEAD;
 const MIR_STREET = 2 * CANAL_Z - TRAM_STREET;
 
 export class Traffic {
@@ -247,12 +250,18 @@ export class Traffic {
     v.obj.visible = true;
   }
 
-  /** Is x a stretch of corridor street that traffic in either direction can reach? */
-  private corridorOk(x: number): boolean {
-    const k = Math.floor(x / CHUNK_W);
-    const l = x - k * CHUNK_W;
+  /**
+   * Can corridor traffic heading dir be at x? Every stretch between two
+   * turn-off points must lead somewhere: cars never pass the last turn-off
+   * before a dead end.
+   */
+  private corridorOk(x: number, dir: 1 | -1): boolean {
     const at = (kk: number) => this.isStreet(kk * CHUNK_W + 1);
-    return at(k) && (l < JUNCTION ? at(k - 1) : at(k + 1));
+    // x lies between the turn-offs of junctions k and k+1; getting there means
+    // driving past one of them, which only happens when both chunks are street.
+    const off = dir === -1 ? TRIG : -TRIG;
+    const k = Math.floor((x - JUNCTION - off) / CHUNK_W);
+    return at(k) && at(k + 1);
   }
 
   /** Spread every lane's vehicles around a new camera position. */
@@ -283,8 +292,8 @@ export class Traffic {
         l.vehicles.push(veh);
       }
     };
-    deal(this.corrPlus, 14, (x) => this.corridorOk(x));
-    deal(this.corrMinus, 14, (x) => this.corridorOk(x));
+    deal(this.corrPlus, 14, (x) => this.corridorOk(x, 1));
+    deal(this.corrMinus, 14, (x) => this.corridorOk(x, -1));
     const roads = this.lanes.filter((l) => !l.corridor && !this.tramLanes.includes(l));
     for (const l of roads) deal(l, 7, () => true);
     for (const v of road) {
@@ -339,16 +348,19 @@ export class Traffic {
     const sp = spec[kind];
     const pts: THREE.Vector2[] = [];
     const corner = (from: THREE.Vector2, c: THREE.Vector2, to: THREE.Vector2) => {
-      for (let i = 0; i <= 8; i++) {
-        const t = i / 8, u = 1 - t;
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24, u = 1 - t;
         pts.push(new THREE.Vector2(u * u * from.x + 2 * u * t * c.x + t * t * to.x, u * u * from.y + 2 * u * t * c.y + t * t * to.y));
       }
     };
     const A = new THREE.Vector2(...sp.a), C1 = new THREE.Vector2(...sp.c1), C2 = new THREE.Vector2(...sp.c2), E = new THREE.Vector2(...sp.e);
     const toward = (p: THREE.Vector2, q2: THREE.Vector2) => p.clone().add(q2.clone().sub(p).setLength(R));
+    pts.push(A.clone().sub(C1.clone().sub(A).setLength(LEAD)));
     corner(A, C1, toward(C1, C2));
     const lastCorner = pts.length;
     corner(toward(C2, C1), C2, E);
+    const E2 = E.clone().add(E.clone().sub(C2).setLength(LEAD));
+    pts.push(E2);
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
     let tramZone: [number, number] | null = null;
@@ -361,29 +373,47 @@ export class Traffic {
       tramZone = [Math.min(a, b), Math.max(a, b)];
     }
     const r: Route = {
-      key, kind, jx, pts, cum, len: cum[cum.length - 1], to: sp.to, joinX: E.x,
+      key, kind, jx, pts, cum, len: cum[cum.length - 1], to: sp.to, joinX: E2.x,
       giveWay: cum[lastCorner], tramZone, riders: [],
     };
     this.routes.set(key, r);
     return r;
   }
 
-  private pointAt(r: Route, s: number, out: THREE.Vector2): number {
-    const cum = r.cum;
-    let i = 1;
-    while (i < cum.length - 1 && cum[i] < s) i++;
-    const t = THREE.MathUtils.clamp((s - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]), 0, 1);
-    out.copy(r.pts[i - 1]).lerp(r.pts[i], t);
-    const d = r.pts[i].clone().sub(r.pts[i - 1]);
-    return Math.atan2(-d.y, d.x);
+  /** Point at progress s along a route; beyond either end it carries straight on. */
+  private pos(r: Route, s: number, out: THREE.Vector2): THREE.Vector2 {
+    const cum = r.cum, pts = r.pts, n = pts.length;
+    if (s <= 0) return out.copy(pts[1]).sub(pts[0]).normalize().multiplyScalar(s).add(pts[0]);
+    if (s >= r.len) return out.copy(pts[n - 1]).sub(pts[n - 2]).normalize().multiplyScalar(s - r.len).add(pts[n - 1]);
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < s) lo = mid;
+      else hi = mid;
+    }
+    const t = (s - cum[lo]) / Math.max(1e-6, cum[hi] - cum[lo]);
+    return out.copy(pts[lo]).lerp(pts[hi], t);
+  }
+
+  /**
+   * Position and heading of a vehicle of length len at progress s. The heading
+   * runs from its rear axle to its front axle, so it swings round gradually
+   * through a corner the way a real car does.
+   */
+  private pointAt(r: Route, s: number, len: number, out: THREE.Vector2): number {
+    const axle = len * 0.33;
+    const front = this.pos(r, s + axle, new THREE.Vector2());
+    const rear = this.pos(r, s - axle, new THREE.Vector2());
+    out.copy(front).add(rear).multiplyScalar(0.5);
+    return Math.atan2(-(front.y - rear.y), front.x - rear.x);
   }
 
   /** Which route (if any) a lane feeds, and where along x its trigger point sits relative to the junction. */
   private feeds(l: Lane): { kind: RouteKind; off: number } | null {
-    if (l === this.corrMinus) return { kind: 'outMain', off: AV + R };
-    if (l === this.busPlus) return { kind: 'inMain', off: -AV - R };
-    if (l === this.corrPlus) return { kind: 'outMir', off: -AV - R };
-    if (l === this.mirMinus) return { kind: 'inMir', off: AV + R };
+    if (l === this.corrMinus) return { kind: 'outMain', off: TRIG };
+    if (l === this.busPlus) return { kind: 'inMain', off: -TRIG };
+    if (l === this.corrPlus) return { kind: 'outMir', off: -TRIG };
+    if (l === this.mirMinus) return { kind: 'inMir', off: TRIG };
     return null;
   }
 
@@ -463,7 +493,7 @@ export class Traffic {
           if (v.plan.turn) {
             trigger = v.plan.jx + feed.off;
             const d = (trigger - v.x) * lane.dir;
-            target = Math.min(target, 2.6 + Math.max(0, d) * 0.45);
+            target = Math.min(target, 2.2 + Math.max(0, d) * 0.4);
           }
         }
         const accel = target > v.speed ? 2.2 : 7;
@@ -530,9 +560,12 @@ export class Traffic {
       for (let i = 0; i < ms.length; i++) {
         const m = ms[i];
         const v = m.v;
+        // Ease out of the first corner, cruise up the avenue, ease into the last one.
+        const c1 = R * 1.6, c2 = r.giveWay;
         let target = Math.min(v.maxSpeed, 4.2);
-        const nearCorner = m.s < R * 1.6 || m.s > r.giveWay - 1;
-        if (nearCorner) target = Math.min(target, 2.8);
+        if (m.s < c1) target = Math.min(target, 2.2 + (m.s / c1) * 0.8);
+        else target = Math.min(target, 2.3 + Math.max(0, c2 - m.s) * 0.35);
+        if (m.s > c2) target = Math.min(target, 2.3);
         if (i > 0) {
           const gap = ms[i - 1].s - m.s - (ms[i - 1].v.length + v.length) / 2;
           target = Math.min(target, Math.max(0, (gap - 1.0) * 1.1));
@@ -545,7 +578,7 @@ export class Traffic {
           if (front >= r.giveWay - 1.2 && this.laneClear(r.to, r.joinX, v.length)) m.cleared = true;
           else if (front > r.giveWay - 6) target = Math.min(target, Math.max(0, (r.giveWay - 0.3 - front) * 1.5));
         }
-        const accel = target > v.speed ? 2.2 : 7;
+        const accel = target > v.speed ? 1.8 : 4;
         v.speed += THREE.MathUtils.clamp(target - v.speed, -accel * dt, accel * dt);
         m.s += v.speed * dt;
         if (i > 0) m.s = Math.min(m.s, ms[i - 1].s - (ms[i - 1].v.length + v.length) / 2 - 0.4);
@@ -564,7 +597,7 @@ export class Traffic {
           this.place(v, r.to);
           continue;
         }
-        const yaw = this.pointAt(r, m.s, tmp);
+        const yaw = this.pointAt(r, m.s, v.length, tmp);
         v.obj.position.set(tmp.x, 0, tmp.y);
         v.obj.rotation.set(0, yaw, 0);
         v.obj.scale.setScalar(this.fade(tmp.x));

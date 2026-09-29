@@ -391,12 +391,14 @@ export class World {
     // eye level on streets and market lanes.
     const ahead = districtAt(this.opts.seed, Math.floor((this.camX + 12) / CHUNK_W));
     this.groundLift = damp(this.groundLift, DISTRICT_LIFT[ahead], 0.5, dt);
-    // Gentle weave and bob, like drifting in a boat or on the breeze.
+    // Street level stays dead centre and looks straight down the corridor (just a
+    // faint bob); the high views drift gently like a drone.
     const low = Math.max(0, 1 - (s.height - 3.6) / 10);
-    const weave = Math.sin(t * 0.11) * (0.5 * low + 2.5 * (1 - low));
-    const bob = Math.sin(t * 0.9) * 0.08 * low + Math.sin(t * 0.21) * 0.4 * (1 - low);
+    const high = 1 - low;
+    const weave = Math.sin(t * 0.11) * 2.5 * high;
+    const bob = Math.sin(t * 0.9) * 0.05 * low + Math.sin(t * 0.21) * 0.4 * high;
     this.camera.position.set(this.camX, s.height + bob + this.groundLift * low, s.lateral + weave);
-    this.lookTarget.set(this.camX + s.ahead, s.lookY + this.groundLift * low, s.lookZ + weave * 0.4 + Math.sin(t * 0.07) * 2.5);
+    this.lookTarget.set(this.camX + s.ahead, s.lookY + this.groundLift * low, s.lookZ + (weave * 0.4 + Math.sin(t * 0.07) * 2.5) * high);
     // Rise (or dip) smoothly ahead of the railway instead of snapping.
     let need = 0;
     for (const ahead of [0, 8, 16, 26]) {

@@ -131,12 +131,6 @@ export class Materials {
   constructor() {
     const g = this.gradient;
     g.colorSpace = THREE.NoColorSpace;
-    // Decals laid over walls: pull them toward the camera in depth so they never z-fight at a distance.
-    for (const m of [this.windows, this.windowDark, this.windowLit, this.windowTv, this.signs, this.neon]) {
-      m.polygonOffset = true;
-      m.polygonOffsetFactor = -1;
-      m.polygonOffsetUnits = -2;
-    }
     this.tinted.add(this.signs);
 
 

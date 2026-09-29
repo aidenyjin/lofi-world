@@ -343,6 +343,8 @@ export class CityChunk {
   private frontage = new Map<number, [number, number][]>();
   private kerbQueue: { row: number; x: number; half: number; fn: (x: number) => void }[] = [];
   private curRow = 0;
+  /** Row-1 building fronts facing the corridor: [x0, x1, front z]. */
+  private row1Walls: [number, number, number][] = [];
 
   private blockFront(x0: number, x1: number, row = this.curRow) {
     let list = this.frontage.get(row);
@@ -438,6 +440,7 @@ export class CityChunk {
     }
 
     this.flushKerb();
+    if (this.district === 'canal') this.canalLanterns(rng, b);
     this.powerLines(rng, b);
     if (!this.mirrored) this.viaduct(rng, b);
     this.flush(b);
@@ -498,8 +501,7 @@ export class CityChunk {
   private corridor(rng: Rng, b: Builders) {
     const d = this.district;
     if (d === 'canal') {
-      if (this.mirrored) this.canalLanterns(rng, b);
-      else this.canal(rng, b);
+      if (!this.mirrored) this.canal(rng, b);
       return;
     }
     const { ink } = b;
@@ -670,7 +672,6 @@ export class CityChunk {
       ink.fill.geometry(CYL6, mat(x, WATER_Y + 1.1, side, 0.12, 0.1, 0.12), '#f1e5df');
     }
 
-    this.canalLanterns(rng, b);
 
     // String lights and bunting over the water.
     const lines = rng.int(0, 2);
@@ -683,11 +684,14 @@ export class CityChunk {
     }
   }
 
-  /** Lanterns on the canal-side walls of row 1 with reflections on the water. */
+  /** Lanterns on the canal-side walls of row 1 with reflections on the water (only where there's a wall to hang them on). */
   private canalLanterns(rng: Rng, b: Builders) {
     const { ink } = b;
+    const busy = this.frontage.get(1) ?? [];
     for (let x = 6; x < CHUNK_W - 2; x += rng.range(6, 10)) {
-      const z = CANAL_Z0 + 0.05;
+      const wall = this.row1Walls.find(([a, c]) => x > a + 0.4 && x < c - 0.4);
+      if (!wall || busy.some(([a, c]) => x + 0.3 > a && x - 0.3 < c)) continue;
+      const z = wall[2];
       ink.box(x, 2.6, z + 0.25, 0.08, 0.5, 0.5, '#4a3a48', 0, false);
       ink.box(x, 2.3, z + 0.45, 0.28, 0.4, 0.28, '#4a3a48');
       b.bulbs.geometry(BULB, mat(x, 2.28, z + 0.45, 0.13, 0.16, 0.13), '#ffffff');
@@ -985,6 +989,7 @@ export class CityChunk {
     const front = cz + d / 2;
     const detailed = row <= 3;
     this.curRow = facesStreet ? row : -1;
+    if (row === 1 && facesStreet) this.row1Walls.push([cx - w / 2, cx + w / 2, front]);
 
     ink.surface = hood.surface === Surf.Plaster && rng.chance(0.2) ? Surf.Brick : hood.surface;
     ink.box(cx, h / 2, cz, w, h, d, wall);
@@ -2113,9 +2118,14 @@ export class CityChunk {
       for (let px = x - cw / 2; px <= x + cw / 2 + 0.01; px += 0.25) ink.fill.geometry(BLOB, mat(px, y + 1.95, z + 0.82, 0.07, 0.09, 0.04), second);
     }
     // Hanging lantern
+    // A lantern hung on a cord from the underside of the canopy
     const lanternY = canopy === 'cart' ? y + 1.8 : y + 1.95;
-    if (this.hood.name === 'chinatown') b.emissive.geometry(BLOB, mat(x + cw / 2 - 0.2, lanternY - 0.1, z + 0.6, 0.14, 0.18, 0.14), '#e8503a');
-    else b.bulbs.geometry(BULB, mat(x, lanternY - 0.1, z + 0.5, 0.12, 0.15, 0.12), '#ffffff');
+    const roofY = canopy === 'cart' ? y + 2.0 : canopy === 'tent' ? y + 2.45 : canopy === 'umbrella' ? y + 2.2 : y + 2.15;
+    const lx = this.hood.name === 'chinatown' ? x + cw / 2 - 0.2 : x;
+    const lz = canopy === 'umbrella' ? z + 0.2 : canopy === 'cart' ? z + 0.3 : z + 0.5;
+    ink.fill.box(lx, (lanternY + roofY) / 2, lz, 0.02, roofY - lanternY + 0.05, 0.02, '#3b2a3a');
+    if (this.hood.name === 'chinatown') b.emissive.geometry(BLOB, mat(lx, lanternY - 0.1, lz, 0.14, 0.18, 0.14), '#e8503a');
+    else b.bulbs.geometry(BULB, mat(lx, lanternY - 0.1, lz, 0.12, 0.15, 0.12), '#ffffff');
     b.glow.quad(x, 0.14, z + 0.9, 2, 2, 'py', '#ffffff');
   }
 
