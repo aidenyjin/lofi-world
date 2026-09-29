@@ -164,11 +164,12 @@ export class WindowMaterial extends THREE.ShaderMaterial {
           float fres = 0.05 + 0.8 * pow(1.0 - cosV, 4.0);
           vec3 R = reflect(V, N);
           vec3 sky = mix(uSkyBottom, uSkyTop, smoothstep(-0.05, 0.6, R.y));
-          float glint = pow(max(dot(R, normalize(uSunDir)), 0.0), 180.0);
+          // Broad, gentle sun sheen (a sharp HDR glint made windows flash in the bloom).
+          float glint = pow(max(dot(R, normalize(uSunDir)), 0.0), 24.0);
           float sheen = smoothstep(0.08, 0.0, abs(fract((vUv.x + vUv.y * 0.6) * 0.8 + seed) - 0.5) - 0.08);
           float reflAmt = fres * mix(0.85, 0.35, uNight * step(0.25, state));
           vec3 col = mix(interior, sky, reflAmt);
-          col += uSun * glint * 2.5 * (1.0 - uNight);
+          col += uSun * glint * 0.18 * (1.0 - uNight);
           col += sky * sheen * 0.12 * (1.0 - 0.6 * uNight);
 
           // ---- Frame and mullions, drawn so they cast no parallax
@@ -176,7 +177,7 @@ export class WindowMaterial extends THREE.ShaderMaterial {
           float mull = shop > 0.5 ? 0.0 : step(abs(vUv.x - 0.5), 0.022) + step(abs(vUv.y - 0.56), 0.02);
           col = mix(col, uFrame * (0.75 + 0.25 * (1.0 - uNight)), clamp(border + mull, 0.0, 1.0));
 
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(min(col, vec3(1.25)), 1.0);
           #include <fog_fragment>
           #include <colorspace_fragment>
         }

@@ -330,7 +330,8 @@ export class Post {
     }
     // Bloom: gentle by day, lush at night when the lights come on.
     this.bloom.strength = 0.3 + p.nightness * 0.35;
-    this.bloom.threshold = 0.95;
+    // By day only true light sources bloom; at night lamps and neon do.
+    this.bloom.threshold = 1.15 - p.nightness * 0.2;
     this.bloom.radius = 0.4;
   }
 

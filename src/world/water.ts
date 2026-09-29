@@ -89,7 +89,7 @@ export class CanalWater {
           float gl = vnoise(vec2(p.x * 2.2 + t * 0.8, p.y * 7.0 - t));
           col += uGlint * smoothstep(0.8, 0.9, gl) * uNight * (0.8 + 0.8 * uPulse);
 
-          gl_FragColor = vec4(col * color, 1.0);
+          gl_FragColor = vec4(min(col * color, vec3(1.1)), 1.0);
           #include <fog_fragment>
           #include <colorspace_fragment>
         }
