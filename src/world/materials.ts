@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { INK, type ResolvedPalette } from '../palette';
+import { WindowMaterial } from './windows';
 import { brushTexture, toonGradient, blobShadowTexture, leafTexture, signAtlas, glowTexture } from './textures';
 
 // Shared materials. Everything that reacts to time of day or to the music
@@ -147,6 +148,9 @@ export class Materials {
     alphaTest: 0.5,
     side: THREE.DoubleSide,
   });
+
+  /** Building windows: glass over a ray-cast room (windows.ts). */
+  readonly windows = new WindowMaterial();
 
   /** TV-lit windows: flicker blue at night. */
   readonly windowTv = new THREE.MeshBasicMaterial({ color: WINDOW_DAY.clone(), vertexColors: true });

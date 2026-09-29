@@ -5,6 +5,7 @@ import { WALLS, TRIM, ROOF, FOLIAGE } from '../palette';
 import { GeoBuilder, InkedBuilder } from './geo';
 import type { Materials } from './materials';
 import type { UVRect } from './textures';
+import { windowColor } from './windows';
 import { buildCharacter, Act, type Pose } from './characters';
 
 // The city is generated in chunks along +X (the direction the camera drifts).
@@ -109,7 +110,6 @@ interface Builders {
   ink: InkedBuilder;
   lit: GeoBuilder;
   dark: GeoBuilder;
-  tv: GeoBuilder;
   bulbs: GeoBuilder;
   glow: GeoBuilder;
   signs: GeoBuilder;
@@ -201,7 +201,6 @@ export class CityChunk {
       ink: new InkedBuilder(0.08),
       lit: new GeoBuilder(),
       dark: new GeoBuilder(),
-      tv: new GeoBuilder(),
       bulbs: new GeoBuilder(),
       glow: new GeoBuilder(),
       signs: new GeoBuilder(),
@@ -256,7 +255,7 @@ export class CityChunk {
     this.addMesh(b.ink.fill.build(), m.toon, true);
     this.addMesh(b.ink.outline.build(), m.ink, false);
     const opt: [GeoBuilder, THREE.Material, boolean?][] = [
-      [b.lit, m.windowLit], [b.dark, m.windowDark], [b.tv, m.windowTv], [b.bulbs, m.bulb],
+      [b.lit, m.windows], [b.dark, m.windowDark], [b.bulbs, m.bulb],
       [b.signs, m.signs], [b.neon, m.neon], [b.flags, m.flags, true], [b.water, m.water],
       [b.glow, m.glow], [b.glass, m.glass],
     ];
@@ -643,7 +642,7 @@ export class CityChunk {
     const doorX = cx + (rng.chance(0.5) ? 1 : -1) * (winW / 2 + 0.6);
     // Display window with warm light and a trim frame
     ink.fill.quad(cx, 1.3, z, winW + 0.3, 1.7, 'pz', '#4a3a48');
-    b.lit.quad(cx, 1.3, z + 0.02, winW, 1.45, 'pz', rng.pick(['#fff1d6', '#ffe4c4', '#ffeede']));
+    b.lit.quad(cx, 1.3, z + 0.02, winW, 1.45, 'pz', windowColor(rng.next(), 'lit', true));
     for (let mx = cx - winW / 2 + winW / 3; mx < cx + winW / 2 - 0.1; mx += winW / 3) ink.fill.quad(mx, 1.3, z + 0.04, 0.06, 1.45, 'pz', '#4a3a48');
     ink.fill.quad(doorX, 1.05, z, 0.95, 2.1, 'pz', '#4a3a48');
     b.dark.quad(doorX, 1.05, z + 0.02, 0.75, 1.95, 'pz', '#f7e6d0');
@@ -692,7 +691,6 @@ export class CityChunk {
     const arched = rng.chance(0.25);
     const ww = 0.85;
     const wh = 1.25;
-    const glowTints = ['#ffffff', '#ffe4c4', '#ffd6e4', '#fff3c8'];
     const place = (facing: 'pz' | 'px' | 'nx', span: number) => {
       const cols = Math.max(1, Math.floor((span - 0.8) / 1.9));
       const gap = span / cols;
@@ -702,8 +700,8 @@ export class CityChunk {
           if (rng.chance(0.06)) continue;
           const o = -span / 2 + gap * (c + 0.5);
           const isLit = rng.chance(litChance);
-          const target = isLit ? (rng.chance(0.08) ? b.tv : b.lit) : b.dark;
-          const glass = isLit ? rng.pick(glowTints) : rng.chance(0.5) ? '#ffffff' : '#e8e0ff';
+          const glass = windowColor(rng.next(), isLit ? (rng.chance(0.08) ? 'tv' : 'lit') : 'dark');
+          const target = b.lit;
           if (facing === 'pz') {
             const z = cz + d / 2;
             const x = cx + o;
@@ -716,8 +714,6 @@ export class CityChunk {
               ink.fill.quad(x - ww / 2 + 0.14, y + 0.02, z + 0.05, 0.22, wh, 'pz', cc);
               ink.fill.quad(x + ww / 2 - 0.14, y + 0.02, z + 0.05, 0.22, wh, 'pz', cc);
             }
-            // Mullion cross
-            ink.fill.quad(x, y + 0.02, z + 0.06, 0.05, wh, 'pz', trim);
             if (!detailed) continue;
             ink.fill.box(x, y - wh / 2 - 0.12, z + 0.12, ww + 0.4, 0.08, 0.24, trim);
             if (shutters) {

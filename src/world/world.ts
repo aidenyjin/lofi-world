@@ -331,6 +331,7 @@ export class World {
     (this.scene.fog as THREE.Fog).color.copy(p.haze);
     this.neonFlicker *= Math.exp(-dt * 14);
     this.mats.update(p, this.beatPulse, t, this.leaves.wind, this.neonFlicker);
+    this.mats.windows.update(p, this.sunDir, t, this.beatPulse);
     this.sky.update(p, this.sunDir, this.camera.position, t);
     this.skyline.update(this.camX, p);
     this.farSkyline.update(this.camX, p);
