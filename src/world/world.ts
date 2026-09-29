@@ -7,6 +7,7 @@ import { Materials } from './materials';
 import { Sky, Skyline } from './sky';
 import { Train } from './train';
 import { Leaves } from './leaves';
+import { Traffic, Boats, Birds, Particles, Fireflies } from './life';
 
 export interface WorldOptions {
   seed: number;
@@ -29,8 +30,8 @@ interface Shot {
 
 const SHOTS: Record<'rooftops' | 'city' | 'vista', Shot> = {
   rooftops: { height: 29, back: 30, lookY: 6, lookZ: -24, focus: 52, aperture: 0.75 },
-  city: { height: 23, back: 32, lookY: 11, lookZ: -42, focus: 64, aperture: 0.6 },
-  vista: { height: 15, back: 30, lookY: 13, lookZ: -85, focus: TRAIN_Z * -1 + 30, aperture: 0.9 },
+  city: { height: 23, back: 32, lookY: 9, lookZ: -34, focus: 60, aperture: 0.6 },
+  vista: { height: 12, back: 30, lookY: 10.5, lookZ: -85, focus: TRAIN_Z * -1 + 30, aperture: 0.9 },
 };
 
 const DRIFT = 1.5; // world units per second
@@ -50,6 +51,12 @@ export class World {
   private skyline: Skyline;
   private train: Train;
   private leaves: Leaves;
+  private traffic: Traffic;
+  private boats: Boats;
+  private birds: Birds;
+  private particles = new Particles();
+  private fireflies = new Fireflies();
+  private neonFlicker = 0;
   private chunks = new Map<number, CityChunk>();
 
   private hemi = new THREE.HemisphereLight();
@@ -78,6 +85,8 @@ export class World {
 
   timeOfDay = 0;
   debugNoPost = false;
+  /** Debug: fixed camera [x, y, z, targetX, targetY, targetZ] relative to the drift. */
+  debugCam: number[] | null = null;
 
   constructor(canvas: HTMLCanvasElement, private opts: WorldOptions) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -95,9 +104,12 @@ export class World {
     this.skyline = new Skyline(opts.seed, this.sky.skyUniforms);
     this.train = new Train(this.mats);
     this.leaves = new Leaves(this.mats, () => this.lookTarget);
+    this.traffic = new Traffic(this.mats);
+    this.boats = new Boats(this.mats);
+    this.birds = new Birds(this.mats);
 
     this.scene.fog = new THREE.Fog(0xffffff, 45, 300);
-    this.scene.add(this.sky.mesh, this.skyline.group, this.train.group, this.leaves.mesh, this.hemi, this.sun, this.sun.target);
+    this.scene.add(this.sky.mesh, this.skyline.group, this.train.group, this.leaves.mesh, this.traffic.group, this.boats.group, this.birds.mesh, this.particles.points, this.fireflies.points, this.hemi, this.sun, this.sun.target);
 
     this.sun.castShadow = true;
     const sc = this.sun.shadow.camera;
@@ -130,9 +142,13 @@ export class World {
       this.beatPulse = beat === 0 ? 1 : 0.7;
     });
     bus.on('kick', () => {
+      this.particles.kick();
       this.kickPulse = 1;
     });
-    bus.on('hat', ({ velocity }) => this.leaves.flutterNow(velocity));
+    bus.on('hat', ({ velocity }) => {
+      this.leaves.flutterNow(velocity);
+      if (Math.random() < 0.12) this.neonFlicker = 1;
+    });
     bus.on('bar', ({ bar }) => this.leaves.gustNow(bar % 4 === 0 ? 1 : 0.35));
     bus.on('chord', ({ mood }) => {
       this.moodTarget = mood === 'warm' ? 0.7 : -0.7;
@@ -141,6 +157,7 @@ export class World {
   }
 
   private onSection(name: SectionName) {
+    if (name !== 'intro') this.birds.startle();
     switch (name) {
       case 'intro':
         this.setShot(SHOTS.city, 0.25);
@@ -247,6 +264,11 @@ export class World {
     const swayY = Math.sin(t * 0.21) * 0.5;
     this.camera.position.set(this.camX + swayX, s.height + swayY, s.back);
     this.lookTarget.set(this.camX + 4, s.lookY, s.lookZ);
+    if (this.debugCam) {
+      const [cx, cy, cz, tx, ty, tz] = this.debugCam;
+      this.camera.position.set(this.camX + cx, cy, cz);
+      this.lookTarget.set(this.camX + tx, ty, tz);
+    }
     this.camera.lookAt(this.lookTarget);
 
     // --- Palette & lights ---------------------------------------------------
@@ -261,7 +283,8 @@ export class World {
     this.sun.target.position.copy(focusPoint);
     this.sun.position.copy(focusPoint).addScaledVector(this.sunDir, 150);
     (this.scene.fog as THREE.Fog).color.copy(p.haze);
-    this.mats.update(p, this.beatPulse);
+    this.neonFlicker *= Math.exp(-dt * 14);
+    this.mats.update(p, this.beatPulse, t, this.leaves.wind, this.neonFlicker);
     this.sky.update(p, this.sunDir, this.camera.position, t);
     this.skyline.update(this.camX, p);
 
@@ -269,6 +292,17 @@ export class World {
     this.updateChunks();
     this.train.update(dt, this.camX);
     this.leaves.update(dt, t, this.leafDensity);
+    this.traffic.update(dt, this.camX, t);
+    this.boats.update(dt, this.camX, t, this.beatPulse);
+    this.birds.update(dt, this.camX, t, this.beatSeconds, this.mats.ink.color);
+    const chimneys: THREE.Vector3[] = [];
+    const fountains: THREE.Vector3[] = [];
+    for (const c of this.chunks.values()) {
+      chimneys.push(...c.chimneys);
+      fountains.push(...c.fountains);
+    }
+    this.particles.update(dt, this.camX, chimneys, fountains, this.leaves.wind, p.nightness, p.haze, this.renderer.domElement.height);
+    this.fireflies.update(t, this.camX, p.nightness, this.beatPulse);
     this.bobResidents();
 
     // --- Post ---------------------------------------------------------------

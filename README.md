@@ -23,12 +23,40 @@ The music engine is the conductor. Every event is scheduled on the audio clock a
 
 | Music | World |
 | --- | --- |
-| beat | rooftop residents nod, string lights breathe at night |
-| kick | a whisper of exposure in the grade |
+| beat | residents nod, string lights and lamp pools breathe at night, boats bob, water glints |
 | hi-hat | leaves flutter |
 | bar | a wind gust through the leaves (bigger every 4 bars) |
 | chord | grade leans warm on major chords, cool on minor |
 | section | camera moves to a new shot; the bridge pulls focus to the train line and sends a train through |
+| kick | fountains leap, a whisper of exposure in the grade |
+| hi-hat | neon signs flicker now and then |
+| section | birds are startled into a wide sweep |
+| bar gusts | bunting and laundry ripple harder |
+
+## The city
+
+Everything is generated from the seed, chunk by chunk, as the camera drifts:
+
+- **Waterfront:** a canal with animated painted water, stone quay walls and mooring posts; arched stone
+  bridges at every avenue plus footbridges; moored boats, some with canopies and lanterns; rowing
+  boats drifting past with passengers; wall lanterns whose light streaks across the water at night.
+- **Promenade:** paved quay with iron railings, landing steps, lamps, trees in stone rings, benches
+  facing the water, kiosks and a flower-bed hedge, then gardens toward the camera.
+- **Streets:** asphalt with dashed centre lines, zebra crossings, kerbed sidewalks, street lamps with
+  light pools at night, street trees, benches, hydrants, post boxes, planters, bins and bicycles; parked
+  cars on the avenue and traffic with headlights on the cross streets; bunting and festoon lights strung
+  across streets and the canal.
+- **Markets:** paved squares of striped stalls with crates of fruit, hanging lanterns and shoppers.
+- **Parks:** lawns with gravel paths, trees, benches and lamps, often a fountain that sprays on the kick.
+- **Facades:** shopfronts with lit display windows, doors, striped scalloped awnings and painted shop
+  boards; café tables with umbrellas; shutters, curtains, sills, arched window heads, flower boxes,
+  balconies with potted plants, string courses, fire escapes and neon blade signs. Windows glow in warm
+  tints at night and a few flicker blue with TV light.
+- **Rooftops:** water towers, stair bulkheads, AC units, antennas, smoking chimneys, solar panels,
+  satellite dishes, skylights, glass greenhouses, patio umbrellas, gardens with string lights, laundry
+  that sways in the wind, lit billboards and residents.
+- **Sky and life:** bird flocks that beat their wings in time, chimney smoke drifting with the wind,
+  fireflies over the water after dark, falling leaves, the elevated train and the hazy skyline.
 
 The time of day cycles independently (golden hour → dusk → night → dawn → day, 20 minutes by default).
 
@@ -54,6 +82,7 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 | `?silent` | visuals only, driven by the same sequencer without audio |
 | `?train` | send a train through immediately |
 | `?nopost` | skip post-processing (debug) |
+| `?cam=x,y,z,tx,ty,tz` | fixed debug camera (offsets from the drift position) |
 
 Keys: `M` mute, `H` hide HUD, `F` fullscreen.
 

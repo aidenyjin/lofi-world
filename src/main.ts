@@ -28,6 +28,7 @@ const shot = params.get('shot');
 if (shot === 'rooftops' || shot === 'city' || shot === 'vista') world.snapShot(shot);
 if (params.has('train')) world.dispatchTrain();
 world.debugNoPost = params.has('nopost');
+if (params.has('cam')) world.debugCam = params.get('cam')!.split(',').map(Number);
 
 const engine = new LofiEngine(seed);
 const start = document.getElementById('start')!;

@@ -113,43 +113,142 @@ const SIGN_A = ['SUNSET', 'MOON', 'HONEY', 'LUCKY', 'SLOW', 'PEACH', 'CLOUD', 'V
 const SIGN_B = ['RECORDS', 'NOODLES', 'COFFEE', 'BAKERY', 'LAUNDRY', 'BOOKS', 'VINYL', 'TEA HOUSE', 'ARCADE', 'SALVAGE', 'RAMEN', 'FLOWERS', 'RADIO'];
 const SIGN_BG = ['#e9786f', '#f6b94f', '#8a7fd0', '#6fa7e0', '#f28fb0', '#57b39a', '#d96a58'];
 
-export function signTexture(rng: Rng): { tex: THREE.CanvasTexture; aspect: number } {
-  const stacked = rng.chance(0.35);
-  const W = stacked ? 256 : 512;
-  const H = stacked ? 320 : 160;
-  const [c, g] = canvas(W, H);
-  const bg = rng.pick(SIGN_BG);
-  g.fillStyle = bg;
-  g.fillRect(0, 0, W, H);
-  // Faded sunset band like the "SUNSET SALVAGE" billboard.
-  if (rng.chance(0.4)) {
-    const grad = g.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, 'rgba(255,255,255,0)');
-    grad.addColorStop(1, 'rgba(255,214,120,0.55)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, W, H);
-  }
-  g.strokeStyle = INK;
-  g.lineWidth = 10;
-  g.strokeRect(5, 5, W - 10, H - 10);
-  g.fillStyle = '#fff4df';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  const a = rng.pick(SIGN_A);
-  const b = rng.pick(SIGN_B);
+export type UVRect = [number, number, number, number];
+
+export interface SignAtlas {
+  tex: THREE.CanvasTexture;
+  /** 4:1 shop signs and billboards. */
+  wide: UVRect[];
+  /** 1:4 vertical neon blade signs. */
+  tall: UVRect[];
+  /** 2:1 small shopfront boards. */
+  small: UVRect[];
+}
+
+const NEON_WORDS = ['HOTEL', 'BAR', 'RAMEN', 'JAZZ', 'CAFE', 'VINYL', 'BOOKS', 'NOODLE', 'LOFI', 'TEA', 'DINER', 'RADIO'];
+const NEON_COLORS = ['#ff8fb1', '#8fe3ff', '#ffe08a', '#b6a2ff', '#9dffc8', '#ffb38a'];
+const SMALL_WORDS = ['OPEN', 'FRUIT', 'FLOWERS', 'BREAD', 'PHO', 'TOYS', 'PLANTS', 'MILK', 'FISH', 'CAMERA', 'TAILOR', 'SOUP'];
+
+let atlas: SignAtlas | null = null;
+
+/**
+ * Every sign in the city comes from one shared 2048px canvas so chunks never
+ * allocate textures of their own. Layout: rows 0-3 hold 16 wide signs (4 per
+ * row), the right-hand strip holds 12 vertical neon blades, and the bottom
+ * band holds 16 small shop boards.
+ */
+export function signAtlas(): SignAtlas {
+  if (atlas) return atlas;
+  const S = 2048;
+  const [c, g] = canvas(S, S);
+  const rng = new Rng(4242);
   const font = (px: number) => `900 ${px}px "Arial Black", "Trebuchet MS", sans-serif`;
-  if (stacked) {
-    g.font = font(52);
-    fitText(g, a, W - 30, 52, font);
-    g.fillText(a, W / 2, H * 0.36);
-    fitText(g, b, W - 30, 52, font);
-    g.fillText(b, W / 2, H * 0.64);
-  } else {
-    const text = `${a} ${b}`;
-    fitText(g, text, W - 40, 70, font);
-    g.fillText(text, W / 2, H / 2 + 4);
+  const wide: UVRect[] = [];
+  const tall: UVRect[] = [];
+  const small: UVRect[] = [];
+  const toUV = (x: number, y: number, w: number, h: number): UVRect => [x / S, 1 - (y + h) / S, (x + w) / S, 1 - y / S];
+
+  // Wide signs: 4 x 4 grid of 384x96 in the left 1536px, top 512px... scaled x1.33.
+  const WW = 384, WH = 96;
+  for (let r = 0; r < 4; r++) {
+    for (let col = 0; col < 4; col++) {
+      const x = col * WW, y = r * (WH + 32);
+      g.fillStyle = rng.pick(SIGN_BG);
+      g.fillRect(x, y, WW, WH);
+      if (rng.chance(0.4)) {
+        const grad = g.createLinearGradient(0, y, 0, y + WH);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(1, 'rgba(255,214,120,0.55)');
+        g.fillStyle = grad;
+        g.fillRect(x, y, WW, WH);
+      }
+      g.strokeStyle = INK;
+      g.lineWidth = 8;
+      g.strokeRect(x + 4, y + 4, WW - 8, WH - 8);
+      g.fillStyle = '#fff4df';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const text = `${rng.pick(SIGN_A)} ${rng.pick(SIGN_B)}`;
+      fitText(g, text, WW - 30, 48, font);
+      g.fillText(text, x + WW / 2, y + WH / 2 + 3);
+      wide.push(toUV(x, y, WW, WH));
+    }
   }
-  return { tex: toTexture(c), aspect: W / H };
+
+  // Neon blades: 12 of 96x384 across the right side.
+  const TW = 96, TH = 384;
+  for (let i = 0; i < 12; i++) {
+    const x = 1560 + (i % 4) * (TW + 26);
+    const y = Math.floor(i / 4) * (TH + 40);
+    const glow = NEON_COLORS[i % NEON_COLORS.length];
+    g.fillStyle = '#3b2a45';
+    g.fillRect(x, y, TW, TH);
+    g.strokeStyle = glow;
+    g.lineWidth = 6;
+    g.strokeRect(x + 8, y + 8, TW - 16, TH - 16);
+    const word = NEON_WORDS[i];
+    g.fillStyle = glow;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const px = Math.min(64, (TH - 40) / word.length);
+    g.font = font(px);
+    g.shadowColor = glow;
+    g.shadowBlur = 14;
+    [...word].forEach((ch, k) => g.fillText(ch, x + TW / 2, y + 24 + px * 0.55 + k * ((TH - 48) / word.length)));
+    g.shadowBlur = 0;
+    tall.push(toUV(x, y, TW, TH));
+  }
+
+  // Small boards: 16 of 192x96 along the bottom.
+  const BW = 192, BH = 96;
+  for (let i = 0; i < 16; i++) {
+    const x = (i % 8) * (BW + 12);
+    const y = 1300 + Math.floor(i / 8) * (BH + 24);
+    g.fillStyle = rng.pick(['#fff1d6', '#f6e1b8', '#e6f0ff', '#ffe3ea']);
+    g.fillRect(x, y, BW, BH);
+    g.strokeStyle = INK;
+    g.lineWidth = 6;
+    g.strokeRect(x + 3, y + 3, BW - 6, BH - 6);
+    g.fillStyle = rng.pick(['#d96a58', '#5b6fb0', '#57907a', '#a0588a']);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const word = SMALL_WORDS[i % SMALL_WORDS.length];
+    fitText(g, word, BW - 24, 44, font);
+    g.fillText(word, x + BW / 2, y + BH / 2 + 3);
+    small.push(toUV(x, y, BW, BH));
+  }
+
+  const tex = toTexture(c);
+  tex.anisotropy = 8;
+  atlas = { tex, wide, tall, small };
+  return atlas;
+}
+
+/** Soft radial glow for lamp light pools and water reflections. */
+export function glowTexture(): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return toTexture(c);
+}
+
+/** Painterly puff for chimney smoke and fountain spray. */
+export function puffTexture(): THREE.CanvasTexture {
+  const [c, g] = canvas(64, 64);
+  const rng = new Rng(9);
+  for (let i = 0; i < 7; i++) {
+    const x = 32 + rng.range(-10, 10), y = 32 + rng.range(-10, 10), r = rng.range(10, 20);
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,0.8)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+  }
+  return toTexture(c);
 }
 
 function fitText(g: CanvasRenderingContext2D, text: string, maxW: number, px: number, font: (px: number) => string) {

@@ -56,6 +56,11 @@ export class Leaves {
     leaf.fall = 0.9 + Math.random() * 1.2;
   }
 
+  /** 0..~1 wind strength, for anything else that sways. */
+  get wind(): number {
+    return Math.min(1.2, 0.25 + this.gust * 0.35);
+  }
+
   /** Called on every bar downbeat. */
   gustNow(strength = 1) {
     this.gust = Math.min(3, this.gust + 1.4 * strength);

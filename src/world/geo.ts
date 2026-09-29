@@ -9,6 +9,10 @@ const tmpV = new THREE.Vector3();
 const tmpN = new THREE.Vector3();
 const tmpC = new THREE.Color();
 const normalMat = new THREE.Matrix3();
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+const rq = new THREE.Quaternion();
+const rm = new THREE.Matrix4();
+const rs = new THREE.Vector3();
 
 export class GeoBuilder {
   private pos: number[] = [];
@@ -72,7 +76,8 @@ export class GeoBuilder {
       this.pos.push(tmpV.x, tmpV.y, tmpV.z);
       this.nor.push(tmpN.x, tmpN.y, tmpN.z);
       if (uv) this.uv.push(uv.getX(i) * 0.5, uv.getY(i) * 0.5);
-      else this.uv.push(0, 0);
+      // No UVs (welded blobs): project world position so the brush grain still shows.
+      else this.uv.push((tmpV.x + tmpV.z * 0.7) / UV_SCALE, tmpV.y / UV_SCALE);
       this.col.push(tmpC.r, tmpC.g, tmpC.b);
     }
     const index = geo.getIndex();
@@ -81,8 +86,15 @@ export class GeoBuilder {
     return this;
   }
 
-  /** Axis-aligned quad facing +Z/-Z/+X/-X, used for windows and doors. */
-  quad(x: number, y: number, z: number, w: number, h: number, facing: 'px' | 'nx' | 'pz' | 'nz', color: THREE.ColorRepresentation): this {
+  /**
+   * Axis-aligned quad facing ±X, ±Z or up (py). `uv` optionally maps the quad
+   * to a sub-rectangle of a texture atlas as [u0, v0, u1, v1].
+   */
+  quad(
+    x: number, y: number, z: number, w: number, h: number,
+    facing: 'px' | 'nx' | 'pz' | 'nz' | 'py', color: THREE.ColorRepresentation,
+    uv: [number, number, number, number] = [0, 0, 1, 1],
+  ): this {
     tmpC.set(color);
     const base = this.pos.length / 3;
     const hw = w / 2, hh = h / 2;
@@ -105,8 +117,14 @@ export class GeoBuilder {
         n = [-1, 0, 0];
         corners = [[x, y - hh, z - hw], [x, y - hh, z + hw], [x, y + hh, z + hw], [x, y + hh, z - hw]];
         break;
+      case 'py':
+        // w along X, h along Z (h grows toward -Z so the texture reads upright from the camera).
+        n = [0, 1, 0];
+        corners = [[x - hw, y, z + hh], [x + hw, y, z + hh], [x + hw, y, z - hh], [x - hw, y, z - hh]];
+        break;
     }
-    const uvs = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const [u0, v0, u1, v1] = uv;
+    const uvs = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
     corners.forEach((c, i) => {
       this.pos.push(c[0], c[1], c[2]);
       this.nor.push(n[0], n[1], n[2]);
@@ -114,6 +132,21 @@ export class GeoBuilder {
       this.col.push(tmpC.r, tmpC.g, tmpC.b);
     });
     this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    return this;
+  }
+
+  /** Single double-sided-friendly triangle; `uvx` per vertex (used for flag sway). */
+  tri(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, color: THREE.ColorRepresentation, uvx: [number, number, number] = [0, 0, 0]): this {
+    tmpC.set(color);
+    const base = this.pos.length / 3;
+    tmpN.subVectors(b, a).cross(tmpV.subVectors(c, a)).normalize();
+    [a, b, c].forEach((p, i) => {
+      this.pos.push(p.x, p.y, p.z);
+      this.nor.push(tmpN.x, tmpN.y, tmpN.z);
+      this.uv.push(uvx[i], 0);
+      this.col.push(tmpC.r, tmpC.g, tmpC.b);
+    });
+    this.idx.push(base, base + 1, base + 2);
     return this;
   }
 
@@ -145,6 +178,17 @@ export class InkedBuilder {
     if (ink) {
       const t = this.thickness * 2;
       this.outline.box(x, y, z, w + t, h + t, d + t, 0x000000, rotY);
+    }
+    return this;
+  }
+
+  /** Arbitrarily rotated box (arches, awnings, solar panels). */
+  boxRot(pos: THREE.Vector3, rot: THREE.Euler, size: THREE.Vector3, color: THREE.ColorRepresentation, ink = true): this {
+    rq.setFromEuler(rot);
+    this.fill.geometry(UNIT_BOX, rm.compose(pos, rq, size), color);
+    if (ink) {
+      const t = this.thickness * 2;
+      this.outline.geometry(UNIT_BOX, rm.compose(pos, rq, rs.set(size.x + t, size.y + t, size.z + t)), 0x000000);
     }
     return this;
   }
