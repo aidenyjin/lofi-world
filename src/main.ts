@@ -7,9 +7,10 @@ import { bus } from './events';
 //   ?seed=123       reproduce a world (the current seed is written to the URL)
 //   ?t=0.3          freeze the time of day (0 golden hour, .2 dusk, .35 night, .75 day)
 //   ?day=900        seconds per full day/night cycle (default 1200)
-//   ?shot=vista     start on a camera shot (rooftops | city | vista)
+//   ?shot=vista     lock the camera to a shot (canal | rooftops | vista)
 //   ?silent         run the visual clock without audio, no click needed
 //   ?train          send a train through immediately
+//   ?x=400          start further along the city
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get('seed')) || Math.floor(Math.random() * 1e9);
 const fixedTime = params.has('t') ? Number(params.get('t')) : null;
@@ -25,7 +26,9 @@ try {
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const world = new World(canvas, { seed, fixedTime, dayLength });
 const shot = params.get('shot');
-if (shot === 'rooftops' || shot === 'city' || shot === 'vista') world.snapShot(shot);
+if (shot === 'canal' || shot === 'rooftops' || shot === 'vista') world.snapShot(shot);
+else if (shot === 'city') world.snapShot('rooftops');
+if (params.has('x')) world.startAt(Number(params.get('x')));
 if (params.has('train')) world.dispatchTrain();
 world.debugNoPost = params.has('nopost');
 if (params.has('cam')) world.debugCam = params.get('cam')!.split(',').map(Number);

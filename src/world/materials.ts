@@ -83,9 +83,30 @@ const RIG_POSITION = /* glsl */ `
   transformed = aRoot + rigRotZ(rigR, rigC2.y);
 `;
 
+/** Shared rim light: a soft sun-coloured edge on toon surfaces. */
+export const rimUniforms = { uRim: { value: new THREE.Color('#ffd9a8') } };
+
+function addRim(shader: THREE.WebGLProgramParametersWithUniforms) {
+  Object.assign(shader.uniforms, rimUniforms);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
+    .replace(
+      '#include <opaque_fragment>',
+      `float rimF = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0);
+      outgoingLight += uRim * rimF;
+      #include <opaque_fragment>`,
+    );
+}
+
+function rimmed<M extends THREE.Material>(m: M): M {
+  m.onBeforeCompile = addRim;
+  return m;
+}
+
 function rigged<M extends THREE.Material>(m: M, uniforms: Record<string, THREE.IUniform>, normals: boolean): M {
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
+    if (normals) addRim(shader);
     let vs = shader.vertexShader.replace('#include <common>', '#include <common>\n' + RIG_PARS);
     if (normals) vs = vs.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n' + RIG_NORMAL);
     vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + RIG_POSITION);
@@ -99,11 +120,11 @@ export class Materials {
   readonly gradient = toonGradient();
   readonly brush = brushTexture();
 
-  readonly toon = new THREE.MeshToonMaterial({
+  readonly toon = rimmed(new THREE.MeshToonMaterial({
     vertexColors: true,
     map: this.brush,
     gradientMap: this.gradient,
-  });
+  }));
 
   readonly ink = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
 
@@ -283,7 +304,7 @@ export class Materials {
     this.windowLit.color.copy(this.windowDark.color).lerp(WINDOW_GLOW, Math.min(1, n * 1.15));
 
     // String-light bulbs: soft by day, warm and breathing with the beat at night.
-    this.bulb.color.copy(BULB_DAY).lerp(BULB_NIGHT, n).multiplyScalar(0.9 + n * (0.35 + 0.35 * beatPulse));
+    this.bulb.color.copy(BULB_DAY).lerp(BULB_NIGHT, n).multiplyScalar(0.9 + n * (0.25 + 0.2 * beatPulse));
 
     this.leaf.color.copy(p.spriteTint);
 
@@ -292,10 +313,10 @@ export class Materials {
     this.windowTv.color.copy(this.windowDark.color).lerp(TV_GLOW, Math.min(1, n * 1.2) * tv);
 
     // Neon: normal paint by day, bright at night with the odd flicker on hats.
-    const neonBoost = 1 + n * (0.9 - 0.7 * neonFlicker);
+    const neonBoost = 1 + n * (0.5 - 0.45 * neonFlicker);
     this.neon.color.copy(p.spriteTint).lerp(WHITE, n).multiplyScalar(neonBoost);
 
-    this.glow.opacity = Math.max(0, n - 0.2) * (0.75 + 0.15 * beatPulse);
+    this.glow.opacity = Math.max(0, n - 0.2) * (0.42 + 0.1 * beatPulse);
 
     this.flagUniforms.uTime.value = time;
     this.flagUniforms.uWind.value = wind;
@@ -310,5 +331,10 @@ export class Materials {
     this.ink.color.set(INK).lerp(p.shadowLift, 0.15);
     this.charInk.color.copy(this.ink.color);
     this.rigUniforms.uTime.value = time;
+    // Rim light follows the sun; a cool moonlit edge at night.
+    rimUniforms.uRim.value.copy(p.sun).multiplyScalar(0.22 * (0.5 + 0.5 * (1 - n)) * p.sunIntensity * 0.45);
+
+    // Lit windows run a little hot at night so the bloom picks them up.
+    this.windowLit.color.multiplyScalar(1 + 0.35 * n);
   }
 }

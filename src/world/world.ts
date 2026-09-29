@@ -2,12 +2,13 @@ import * as THREE from 'three';
 import { bus, type SectionName } from '../events';
 import { createResolvedPalette, samplePalette, sunDirection } from '../palette';
 import { Post } from '../fx/post';
-import { CityChunk, CHUNK_W, TRAIN_Z } from './city';
+import { CityChunk, CHUNK_W, CANAL_Z, districtAt, type District } from './city';
 import { Materials } from './materials';
 import { Sky, Skyline } from './sky';
 import { Train } from './train';
 import { Leaves } from './leaves';
 import { Traffic, Boats, Birds, Particles, Fireflies } from './life';
+import { CanalWater } from './water';
 
 export interface WorldOptions {
   seed: number;
@@ -17,24 +18,32 @@ export interface WorldOptions {
   dayLength: number;
 }
 
-// Camera "shots". The director eases between them on section changes, the
-// way a lofi video cuts to a new vista when the track moves on.
+// Camera "shots". The camera always travels forward (+X) through the city;
+// the director eases between these on section changes, the way a lofi video
+// cuts to a new view when the track moves on.
 interface Shot {
   height: number;
-  back: number; // camera z
+  lateral: number; // camera z
+  ahead: number; // how far ahead it looks
   lookY: number;
   lookZ: number;
   focus: number; // DOF focus distance
   aperture: number;
+  speed: number; // travel speed, units/s
 }
 
-const SHOTS: Record<'rooftops' | 'city' | 'vista', Shot> = {
-  rooftops: { height: 29, back: 30, lookY: 6, lookZ: -24, focus: 52, aperture: 0.75 },
-  city: { height: 23, back: 32, lookY: 9, lookZ: -34, focus: 60, aperture: 0.6 },
-  vista: { height: 12, back: 30, lookY: 10.5, lookZ: -85, focus: TRAIN_Z * -1 + 30, aperture: 0.9 },
-};
+export type ShotName = 'canal' | 'rooftops' | 'vista';
 
-const DRIFT = 1.5; // world units per second
+const DISTRICT_LIFT: Record<District, number> = { canal: 0, street: -0.35, market: -0.3, park: -0.1 };
+
+const SHOTS: Record<ShotName, Shot> = {
+  // Gliding down the canal at boat height, under string lights and bridges.
+  canal: { height: 3.6, lateral: CANAL_Z, ahead: 30, lookY: 2.8, lookZ: CANAL_Z, focus: 20, aperture: 0.45, speed: 3.2 },
+  // A drone flight over the rooftops, looking ahead along the canal.
+  rooftops: { height: 19, lateral: CANAL_Z + 7, ahead: 38, lookY: 5, lookZ: CANAL_Z - 9, focus: 40, aperture: 0.6, speed: 4 },
+  // High and far: the city rolling toward the horizon, the train overtaking.
+  vista: { height: 34, lateral: CANAL_Z + 14, ahead: 90, lookY: 10, lookZ: CANAL_Z - 26, focus: 85, aperture: 0.75, speed: 5 },
+};
 
 function damp(current: number, target: number, rate: number, dt: number): number {
   return target + (current - target) * Math.exp(-rate * dt);
@@ -57,7 +66,10 @@ export class World {
   private particles = new Particles();
   private fireflies = new Fireflies();
   private neonFlicker = 0;
-  private chunks = new Map<number, CityChunk>();
+  private water: CanalWater;
+  private basePixelRatio = 1;
+  private chunks = new Map<string, CityChunk>();
+  private farSkyline: Skyline;
 
   private hemi = new THREE.HemisphereLight();
   private sun = new THREE.DirectionalLight();
@@ -67,10 +79,11 @@ export class World {
   private clock = new THREE.Timer();
   private elapsed = 0;
   private camX = 0;
-  private shot: Shot = { ...SHOTS.city };
-  private shotTarget: Shot = SHOTS.city;
+  private shot: Shot = { ...SHOTS.canal };
+  private shotTarget: Shot = SHOTS.canal;
   private shotSpeed = 0.35;
   private lookTarget = new THREE.Vector3();
+  private groundLift = 0;
 
   // Music-driven state
   private beatPulse = 0;
@@ -92,36 +105,46 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     // Phones and tablets: fewer pixels, smaller shadows, lighter blur.
     const lowPower = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPower ? 1.25 : 1.5));
+    this.basePixelRatio = Math.min(window.devicePixelRatio, lowPower ? 1.25 : 2);
+    this.renderer.setPixelRatio(this.basePixelRatio);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap; // soft via shadow.radius
+    // The post pipeline asks for one shadow update per frame (the canal
+    // reflection renders the scene again and must reuse it).
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.NoToneMapping;
 
     const gl = this.renderer.extensions;
     const halfFloat = gl.has('EXT_color_buffer_half_float') || gl.has('EXT_color_buffer_float');
-    this.post = new Post(2, 2, halfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType);
+    this.post = new Post(2, 2, halfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType, lowPower ? 0 : 4);
     if (lowPower) this.post.uniforms.uMaxBlur.value = 6;
     this.skyline = new Skyline(opts.seed, this.sky.skyUniforms);
+    // A second skyline behind the far bank, mirrored across the canal.
+    this.farSkyline = new Skyline(opts.seed ^ 0x5eed, this.sky.skyUniforms);
+    this.farSkyline.group.scale.z = -1;
+    this.farSkyline.group.position.z = 2 * CANAL_Z;
     this.train = new Train(this.mats);
     this.leaves = new Leaves(this.mats, () => this.lookTarget);
     this.traffic = new Traffic(this.mats);
     this.boats = new Boats(this.mats);
     this.birds = new Birds(this.mats);
+    this.water = new CanalWater(this.renderer);
 
-    this.scene.fog = new THREE.Fog(0xffffff, 45, 300);
-    this.scene.add(this.sky.mesh, this.skyline.group, this.train.group, this.leaves.mesh, this.traffic.group, this.boats.group, this.birds.mesh, this.particles.points, this.fireflies.points, this.hemi, this.sun, this.sun.target);
+    this.scene.fog = new THREE.Fog(0xffffff, 30, 230);
+    this.scene.add(this.sky.mesh, this.skyline.group, this.farSkyline.group, this.train.group, this.leaves.mesh, this.traffic.group, this.boats.group, this.birds.mesh, this.particles.points, this.fireflies.points, this.water.mesh, this.hemi, this.sun, this.sun.target);
 
     this.sun.castShadow = true;
     const sc = this.sun.shadow.camera;
-    sc.left = -75;
-    sc.right = 75;
-    sc.top = 75;
-    sc.bottom = -75;
+    sc.left = -70;
+    sc.right = 70;
+    sc.top = 70;
+    sc.bottom = -70;
     sc.near = 1;
-    sc.far = 320;
-    this.sun.shadow.mapSize.setScalar(lowPower ? 1024 : 2048);
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.04;
+    sc.far = 360;
+    this.sun.shadow.mapSize.setScalar(lowPower ? 1024 : 4096);
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.03;
+    this.sun.shadow.radius = 3;
 
     this.timeOfDay = opts.fixedTime ?? 0.02;
     this.updateChunks(true);
@@ -160,12 +183,12 @@ export class World {
     if (name !== 'intro') this.birds.startle();
     switch (name) {
       case 'intro':
-        this.setShot(SHOTS.city, 0.25);
+        this.setShot(SHOTS.canal, 0.25);
         this.leafDensity = 0.3;
         break;
       case 'groove':
         this.shotToggle = !this.shotToggle;
-        this.setShot(this.shotToggle ? SHOTS.rooftops : SHOTS.city, 0.3);
+        this.setShot(this.shotToggle ? SHOTS.rooftops : SHOTS.canal, 0.3);
         this.leafDensity = 0.7;
         if (Math.random() < 0.5) this.train.dispatch(16);
         break;
@@ -177,7 +200,7 @@ export class World {
         this.leaves.gustNow(2);
         break;
       case 'breakdown':
-        this.setShot({ ...SHOTS.rooftops, aperture: 1.3, focus: 46 }, 0.3);
+        this.setShot({ ...SHOTS.canal, aperture: 0.9, focus: 16, speed: 2.2 }, 0.3);
         this.leafDensity = 0.4;
         break;
     }
@@ -192,10 +215,18 @@ export class World {
   }
 
   /** For screenshots/debugging: jump straight to a named shot. */
-  snapShot(name: keyof typeof SHOTS) {
+  snapShot(name: ShotName) {
     this.shotLocked = true;
     this.shotTarget = SHOTS[name];
     this.shot = { ...SHOTS[name] };
+  }
+
+  /** Start the journey somewhere else along the city. */
+  startAt(x: number) {
+    this.camX = x;
+    for (const c of this.chunks.values()) c.dispose();
+    this.chunks.clear();
+    this.updateChunks(true);
   }
 
   /** Debug: send a train through now. */
@@ -206,6 +237,9 @@ export class World {
   private resize() {
     const w = this.renderer.domElement.clientWidth || window.innerWidth;
     const h = this.renderer.domElement.clientHeight || window.innerHeight;
+    // Cap the render size (~1440p) so big monitors stay smooth.
+    const maxPr = Math.min(this.basePixelRatio, 2560 / Math.max(w, 1), 1440 / Math.max(h, 1));
+    this.renderer.setPixelRatio(Math.max(1, maxPr));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     // Keep a similar horizontal field of view on portrait screens.
@@ -216,21 +250,25 @@ export class World {
   }
 
   private updateChunks(all = false) {
-    const from = Math.floor((this.camX - 95) / CHUNK_W);
-    const to = Math.floor((this.camX + 115) / CHUNK_W);
+    // Mostly ahead of the camera: that's where it's heading.
+    const from = Math.floor((this.camX - 45) / CHUNK_W);
+    const to = Math.floor((this.camX + 200) / CHUNK_W);
     let built = 0;
     for (let i = from; i <= to; i++) {
-      if (this.chunks.has(i)) continue;
-      if (!all && built >= 1) break; // spread generation across frames
-      const chunk = new CityChunk(i, this.opts.seed, this.mats);
-      this.scene.add(chunk.group);
-      this.chunks.set(i, chunk);
-      built++;
+      for (const mirrored of [false, true]) {
+        const key = `${i}${mirrored ? 'm' : ''}`;
+        if (this.chunks.has(key)) continue;
+        if (!all && built >= 1) return; // spread generation across frames
+        const chunk = new CityChunk(i, this.opts.seed, this.mats, mirrored);
+        this.scene.add(chunk.group);
+        this.chunks.set(key, chunk);
+        built++;
+      }
     }
-    for (const [i, c] of this.chunks) {
-      if (i < from - 1 || i > to + 1) {
+    for (const [key, c] of this.chunks) {
+      if (c.index < from - 1 || c.index > to + 1) {
         c.dispose();
-        this.chunks.delete(i);
+        this.chunks.delete(key);
       }
     }
   }
@@ -250,20 +288,28 @@ export class World {
     this.beatPhase = this.lastBeatAt >= 0 ? Math.min(1, (t - this.lastBeatAt) / this.beatSeconds) : (t / 0.8) % 1;
 
     // --- Camera -------------------------------------------------------------
-    this.camX += DRIFT * dt;
     const s = this.shot;
     const g = this.shotTarget;
     const r = this.shotSpeed;
+    s.speed = damp(s.speed, g.speed, r, dt);
+    this.camX += s.speed * dt;
     s.height = damp(s.height, g.height, r, dt);
-    s.back = damp(s.back, g.back, r, dt);
+    s.lateral = damp(s.lateral, g.lateral, r, dt);
+    s.ahead = damp(s.ahead, g.ahead, r, dt);
     s.lookY = damp(s.lookY, g.lookY, r, dt);
     s.lookZ = damp(s.lookZ, g.lookZ, r, dt);
     s.focus = damp(s.focus, g.focus, r * 1.4, dt);
     s.aperture = damp(s.aperture, g.aperture, r * 1.4, dt);
-    const swayX = Math.sin(t * 0.13) * 1.2;
-    const swayY = Math.sin(t * 0.21) * 0.5;
-    this.camera.position.set(this.camX + swayX, s.height + swayY, s.back);
-    this.lookTarget.set(this.camX + 4, s.lookY, s.lookZ);
+    // At ground level, settle to each district: boat height on the canal,
+    // eye level on streets and market lanes.
+    const ahead = districtAt(this.opts.seed, Math.floor((this.camX + 12) / CHUNK_W));
+    this.groundLift = damp(this.groundLift, DISTRICT_LIFT[ahead], 0.5, dt);
+    // Gentle weave and bob, like drifting in a boat or on the breeze.
+    const low = Math.max(0, 1 - (s.height - 3.6) / 10);
+    const weave = Math.sin(t * 0.11) * (1.1 * low + 2.5 * (1 - low));
+    const bob = Math.sin(t * 0.9) * 0.08 * low + Math.sin(t * 0.21) * 0.4 * (1 - low);
+    this.camera.position.set(this.camX, s.height + bob + this.groundLift * low, s.lateral + weave);
+    this.lookTarget.set(this.camX + s.ahead, s.lookY + this.groundLift * low, s.lookZ + weave * 0.4 + Math.sin(t * 0.07) * 2.5);
     if (this.debugCam) {
       const [cx, cy, cz, tx, ty, tz] = this.debugCam;
       this.camera.position.set(this.camX + cx, cy, cz);
@@ -279,7 +325,7 @@ export class World {
     this.hemi.intensity = p.hemiIntensity;
     this.sun.color.copy(p.sun);
     this.sun.intensity = p.sunIntensity;
-    const focusPoint = new THREE.Vector3(this.camX, 0, -30);
+    const focusPoint = new THREE.Vector3(this.camX + 40, 0, CANAL_Z - 8);
     this.sun.target.position.copy(focusPoint);
     this.sun.position.copy(focusPoint).addScaledVector(this.sunDir, 150);
     (this.scene.fog as THREE.Fog).color.copy(p.haze);
@@ -287,13 +333,14 @@ export class World {
     this.mats.update(p, this.beatPulse, t, this.leaves.wind, this.neonFlicker);
     this.sky.update(p, this.sunDir, this.camera.position, t);
     this.skyline.update(this.camX, p);
+    this.farSkyline.update(this.camX, p);
 
     // --- World --------------------------------------------------------------
     this.updateChunks();
     this.train.update(dt, this.camX);
     this.leaves.update(dt, t, this.leafDensity);
     this.traffic.update(dt, this.camX, t);
-    this.boats.update(dt, this.camX, t, this.beatPulse);
+    this.boats.update(dt, this.camX, t, this.beatPulse, (x) => districtAt(this.opts.seed, Math.floor(x / CHUNK_W)) === 'canal');
     this.birds.update(dt, this.camX, t, this.beatSeconds, this.mats.ink.color);
     const chimneys: THREE.Vector3[] = [];
     const fountains: THREE.Vector3[] = [];
@@ -303,19 +350,22 @@ export class World {
     }
     this.particles.update(dt, this.camX, chimneys, fountains, this.leaves.wind, p.nightness, p.haze, this.renderer.domElement.height);
     this.fireflies.update(t, this.camX, p.nightness, this.beatPulse);
+    this.water.update(this.camX, p, t, this.beatPulse);
     // Characters animate on the GPU; just feed the rig its clock.
     this.mats.rigUniforms.uBeatPh.value = this.beatPhase;
     this.mats.rigUniforms.uBeatLen.value = this.beatSeconds;
 
     // --- Post ---------------------------------------------------------------
-    this.post.update(this.camera, p, t);
+    this.post.update(this.camera, p, t, this.sunDir);
     const u = this.post.uniforms;
     u.uFocus.value = s.focus;
     u.uAperture.value = s.aperture;
     u.uMood.value = this.mood;
     u.uPulse.value = this.kickPulse;
-    u.uLeakPos.value.set(this.sunDir.x > 0 ? 0.9 : 0.1, 1.05);
-    if (this.debugNoPost) this.renderer.render(this.scene, this.camera);
+    if (this.debugNoPost) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.renderer.render(this.scene, this.camera);
+    }
     else this.post.render(this.renderer, this.scene, this.camera);
   }
 }

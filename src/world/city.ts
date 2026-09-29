@@ -10,13 +10,27 @@ import { buildCharacter, Act, type Pose } from './characters';
 // The city is generated in chunks along +X (the direction the camera drifts).
 // Each chunk is a strip of blocks receding into the distance:
 //
-//   z  -6 .. -12   quayside promenade (bottom of the frame)
 //   z -12 .. -19   the canal, crossed by a stone bridge at every avenue
 //   row 1..4       blocks separated by streets, the elevated train over the last
+//
+// The camera travels along +X down the canal, so each chunk index is built
+// twice: the main bank, and a mirrored far bank (different seed) reflected
+// across the canal's centre line so both sides have facades facing the water.
 //
 // An avenue runs toward the horizon at the start of every chunk (x 0..4).
 
 export const CHUNK_W = 36;
+
+/** What runs down the central corridor the camera travels along. */
+export type District = 'canal' | 'street' | 'market' | 'park';
+
+/** Districts come in runs of three chunks so each stretch has time to breathe. */
+export function districtAt(seed: number, index: number): District {
+  const run = Math.floor(index / 3);
+  if (run === 0) return 'canal';
+  const r = new Rng(hashSeed(seed, run, 0xd15)).next();
+  return r < 0.4 ? 'canal' : r < 0.65 ? 'street' : r < 0.85 ? 'market' : 'park';
+}
 export const TRAIN_Z = -79.5;
 export const TRAIN_Y = 15;
 
@@ -153,17 +167,36 @@ export class CityChunk {
     readonly index: number,
     private worldSeed: number,
     private mats: Materials,
+    readonly mirrored = false,
   ) {
     this.group.position.x = index * CHUNK_W;
+    this.district = districtAt(worldSeed, index);
+    if (mirrored) {
+      // Reflect across z = CANAL_Z (three.js flips face winding for us).
+      this.group.scale.z = -1;
+      this.group.position.z = 2 * CANAL_Z;
+    }
     this.generate();
   }
+
+  /** Local z to world z (the far bank is mirrored). */
+  private wz(z: number) {
+    return this.mirrored ? 2 * CANAL_Z - z : z;
+  }
+
+  /** Mirrored facades would show sign text backwards; flip those UVs. */
+  private signUV(uv: UVRect): UVRect {
+    return this.mirrored ? [uv[2], uv[1], uv[0], uv[3]] : uv;
+  }
+
+  readonly district: District = 'canal';
 
   private get x0() {
     return this.group.position.x;
   }
 
   private generate() {
-    const rng = new Rng(hashSeed(this.worldSeed, this.index, 0x51));
+    const rng = new Rng(hashSeed(this.worldSeed, this.index, this.mirrored ? 0x6d : 0x51));
     const b: Builders = {
       ink: new InkedBuilder(0.08),
       lit: new GeoBuilder(),
@@ -181,12 +214,11 @@ export class CityChunk {
     };
 
     this.ground(b);
-    this.canal(rng, b);
+    this.corridor(rng, b);
     this.streets(rng, b);
 
-    this.quay(rng, b);
-
-    for (let row = 1; row < ROWS; row++) {
+    const lastRow = this.mirrored ? ROWS - 2 : ROWS - 1;
+    for (let row = 1; row <= lastRow; row++) {
       const zFront = rowFront(row);
       let x = AVENUE_W;
       while (x < CHUNK_W - 2.5) {
@@ -215,7 +247,7 @@ export class CityChunk {
     }
 
     this.powerLines(rng, b);
-    this.trainLine(rng, b);
+    if (!this.mirrored) this.trainLine(rng, b);
     this.flush(b);
   }
 
@@ -263,11 +295,86 @@ export class CityChunk {
 
   private ground(b: Builders) {
     const { fill } = b.ink;
-    // Two slabs with the canal cut between them.
-    const frontDepth = 20 - CANAL_Z1;
-    fill.box(CHUNK_W / 2, -0.3, CANAL_Z1 + frontDepth / 2, CHUNK_W + 0.02, 0.6, frontDepth, PAVEMENT);
+    // One slab per bank; the mirrored chunk supplies the far one.
     const backDepth = CANAL_Z0 + 112;
     fill.box(CHUNK_W / 2, -0.3, CANAL_Z0 - backDepth / 2, CHUNK_W + 0.02, 0.6, backDepth, PAVEMENT);
+  }
+
+  /**
+   * The corridor between the two banks (z CANAL_Z0..CANAL_Z1). The main bank
+   * builds the shared middle; each bank builds the features on its own half,
+   * which the mirror then turns to face the other side.
+   */
+  private corridor(rng: Rng, b: Builders) {
+    const d = this.district;
+    if (d === 'canal') {
+      if (this.mirrored) this.canalLanterns(rng, b);
+      else this.canal(rng, b);
+      return;
+    }
+    const { ink } = b;
+    const zc = CANAL_Z;
+    const width = CANAL_Z1 - CANAL_Z0;
+    const half0 = CANAL_Z0; // this bank's edge
+    if (!this.mirrored) {
+      ink.fill.box(CHUNK_W / 2, -0.3, zc, CHUNK_W + 0.02, 0.6, width, PAVEMENT);
+      // Festoons and bunting across, shared by both sides
+      const across = d === 'market' ? 5 : d === 'street' ? 2 : 1;
+      for (let i = 0; i < across; i++) {
+        const x = ((i + rng.range(0.2, 0.8)) / across) * CHUNK_W;
+        const a = new THREE.Vector3(x, rng.range(6.2, 7.2), CANAL_Z1 - 0.1);
+        const c = new THREE.Vector3(x + rng.range(-2, 2), a.y, CANAL_Z0 + 0.1);
+        if (d === 'market' ? i % 2 === 0 : rng.chance(0.5)) this.sagLine(a, c, 0.7, b.wires, b.bulbs, 0.1);
+        else this.bunting(rng, b, a, c, 0.8);
+      }
+    }
+    if (d === 'street') {
+      if (!this.mirrored) {
+        ink.fill.quad(CHUNK_W / 2, 0.01, zc, CHUNK_W + 0.02, 4, 'py', ASPHALT);
+        for (let x = 0.6; x < CHUNK_W; x += 2.4) ink.fill.quad(x, 0.02, zc, 1.1, 0.12, 'py', '#f3e7c9');
+        for (let z = zc - 1.8; z < zc + 1.9; z += 0.5) ink.fill.quad(AVENUE_W + 0.9, 0.02, z, 1.3, 0.26, 'py', '#f6eee0');
+      }
+      ink.fill.box(CHUNK_W / 2, 0.08, half0 + 0.75, CHUNK_W + 0.02, 0.16, 1.5, PAVEMENT);
+      ink.fill.box(CHUNK_W / 2, 0.17, half0 + 1.44, CHUNK_W + 0.02, 0.04, 0.12, KERB);
+      const lampX = rng.range(3, 8);
+      for (let x = lampX; x < CHUNK_W - 1; x += 9) this.lampPost(b, x, half0 + 1.2, 0.16, true);
+      for (let x = lampX + 4.5; x < CHUNK_W - 1; x += 9) if (rng.chance(0.7)) this.tree(rng, b, x, 0.16, half0 + 1.1, rng.range(0.8, 1.0));
+      for (let x = rng.range(6, 12); x < CHUNK_W - 3; x += rng.range(7, 12)) {
+        if (rng.chance(0.6)) buildCar(ink, null, x, 0.01, half0 + 2.15, 0, rng.pick(CAR_COLORS), rng.chance(0.2));
+      }
+      for (let x = AVENUE_W + 2; x < CHUNK_W - 1; x += rng.range(4, 7)) if (rng.chance(0.5)) this.furniture(rng, b, x, half0 + 0.5);
+    } else if (d === 'market') {
+      if (!this.mirrored) {
+        for (let x = 0.5; x < CHUNK_W; x += 1.0) ink.fill.quad(x, 0.004, zc, 0.04, width, 'py', '#d8c6c4');
+        ink.fill.quad(CHUNK_W / 2, 0.005, zc, CHUNK_W, 1.2, 'py', '#e8d2c0');
+      }
+      for (let x = rng.range(1.5, 3); x < CHUNK_W - 1.5; x += rng.range(2.7, 3.3)) {
+        if (x > AVENUE_W - 1 && x < AVENUE_W + 1.2) continue;
+        this.stall(rng, b, x, half0 + 1.0, 2.2);
+      }
+      for (let i = 0; i < rng.int(2, 4); i++) this.resident(rng, b, rng.range(2, CHUNK_W - 2), 0.02, half0 + rng.range(2.4, 3.1), 'stand');
+    } else {
+      // Park avenue: lawn, gravel walk, a row of trees and benches per side.
+      if (!this.mirrored) {
+        ink.fill.quad(CHUNK_W / 2, 0.004, zc, CHUNK_W + 0.02, width, 'py', '#b9d8a8');
+        ink.fill.quad(CHUNK_W / 2, 0.006, zc, CHUNK_W + 0.02, 1.8, 'py', '#eadccb');
+        const fx = rng.range(12, CHUNK_W - 12);
+        ink.geometry(CYL, mat(fx, 0.25, zc, 1.3, 0.5, 1.3), STONE);
+        b.water.geometry(CYL, mat(fx, 0.48, zc, 1.15, 0.02, 1.15), '#ffffff');
+        ink.geometry(CYL, mat(fx, 0.8, zc, 0.16, 1.0, 0.16), STONE);
+        ink.geometry(CYL, mat(fx, 1.3, zc, 0.55, 0.1, 0.55), STONE);
+        this.fountains.push(new THREE.Vector3(fx + this.x0, 1.4, zc));
+      }
+      ink.box(CHUNK_W / 2, 0.3, half0 + 0.35, CHUNK_W + 0.02, 0.6, 0.6, '#8fb98a', 0, false);
+      for (let x = 1; x < CHUNK_W; x += 1.3) ink.fill.geometry(BLOB, mat(x, 0.7, half0 + 0.4, 0.3, 0.24, 0.3), rng.pick(FLOWERS));
+      for (let x = rng.range(1, 3); x < CHUNK_W - 1; x += 5) this.tree(rng, b, x, 0, half0 + 1.4, rng.range(1.0, 1.25));
+      for (let x = rng.range(4, 6); x < CHUNK_W - 2; x += 10) {
+        ink.box(x, 0.45, half0 + 2.1, 1.6, 0.1, 0.5, WOOD);
+        ink.box(x, 0.8, half0 + 1.85, 1.6, 0.4, 0.08, WOOD);
+        if (rng.chance(0.6)) this.resident(rng, b, x, 0.05, half0 + 2.15, 'sit');
+        this.lampPost(b, x + 2.5, half0 + 1.9, 0, false);
+      }
+    }
   }
 
   private canal(rng: Rng, b: Builders) {
@@ -282,7 +389,15 @@ export class CityChunk {
       // Mossy waterline
       ink.fill.quad(CHUNK_W / 2, WATER_Y + 0.12, wz + (wz === nearWall ? -wallT / 2 - 0.01 : wallT / 2 + 0.01), CHUNK_W + 0.02, 0.24, wz === nearWall ? 'nz' : 'pz', '#9fb59a');
     }
-    b.water.quad(CHUNK_W / 2, WATER_Y, CANAL_Z, CHUNK_W + 0.04, CANAL_Z1 - CANAL_Z0 - 0.02, 'py', '#ffffff');
+    // The water surface itself is one reflective plane (water.ts).
+    // End walls where the canal meets another district, with steps up.
+    for (const [nx, ex] of [[this.index - 1, 0.2], [this.index + 1, CHUNK_W - 0.2]] as const) {
+      if (districtAt(this.worldSeed, nx) === 'canal') continue;
+      ink.fill.box(ex, -0.55, CANAL_Z, 0.4, 1.3, CANAL_Z1 - CANAL_Z0, STONE);
+      ink.fill.box(ex, 0.14, CANAL_Z, 0.52, 0.12, CANAL_Z1 - CANAL_Z0, KERB);
+      const dir = ex < 1 ? 1 : -1;
+      for (let k = 0; k < 4; k++) ink.box(ex + dir * (0.45 + k * 0.35), -0.1 - k * 0.16, CANAL_Z, 0.35, 0.16, 2.4, STONE, 0, false);
+    }
 
     // Stone bridge carrying the avenue across.
     this.bridge(b, AVENUE_W / 2, 3.4, true);
@@ -302,23 +417,28 @@ export class CityChunk {
       buildBoat(ink, b.bulbs, bx, near ? CANAL_Z1 - 1.05 : CANAL_Z0 + 1.05, rng.pick(ACCENTS), rng.chance(0.4));
     }
 
-    // Lanterns on the canal-side walls of row 1 with reflections on the water.
+    this.canalLanterns(rng, b);
+
+    // String lights and bunting over the water.
+    const lines = rng.int(0, 2);
+    for (let i = 0; i < lines; i++) {
+      const x = rng.range(6, CHUNK_W - 4);
+      const a = new THREE.Vector3(x, rng.range(6.2, 7.2), CANAL_Z1 + 0.1);
+      const c = new THREE.Vector3(x + rng.range(-3, 3), a.y + rng.range(-0.4, 0.4), CANAL_Z0 - 0.1);
+      if (rng.chance(0.5)) this.sagLine(a, c, 0.8, b.wires, b.bulbs, 0.1);
+      else this.bunting(rng, b, a, c, 0.9);
+    }
+  }
+
+  /** Lanterns on the canal-side walls of row 1 with reflections on the water. */
+  private canalLanterns(rng: Rng, b: Builders) {
+    const { ink } = b;
     for (let x = 6; x < CHUNK_W - 2; x += rng.range(6, 10)) {
       const z = CANAL_Z0 + 0.05;
       ink.box(x, 2.6, z + 0.25, 0.08, 0.5, 0.5, '#4a3a48', 0, false);
       ink.box(x, 2.3, z + 0.45, 0.28, 0.4, 0.28, '#4a3a48');
       b.bulbs.geometry(BULB, mat(x, 2.28, z + 0.45, 0.13, 0.16, 0.13), '#ffffff');
       b.glow.quad(x, WATER_Y + 0.02, z + 1.6, 1.1, 3.4, 'py', '#ffffff');
-    }
-
-    // String lights and bunting over the water.
-    const lines = rng.int(0, 2);
-    for (let i = 0; i < lines; i++) {
-      const x = rng.range(6, CHUNK_W - 4);
-      const a = new THREE.Vector3(x, rng.range(4.2, 5.2), CANAL_Z1 + 0.1);
-      const c = new THREE.Vector3(x + rng.range(-3, 3), a.y + rng.range(-0.4, 0.4), CANAL_Z0 - 0.1);
-      if (rng.chance(0.5)) this.sagLine(a, c, 0.8, b.wires, b.bulbs, 0.1);
-      else this.bunting(rng, b, a, c, 0.9);
     }
   }
 
@@ -477,62 +597,6 @@ export class CityChunk {
     }
   }
 
-  /** The promenade between the camera and the canal. */
-  private quay(rng: Rng, b: Builders) {
-    const { ink } = b;
-    const z0 = CANAL_Z1; // canal edge
-    const z1 = CANAL_Z1 + 6; // back of the promenade
-    // Herringbone-ish paving: offset tile rows
-    for (let z = z0 + 0.5; z < z1; z += 0.9) {
-      const off = (Math.round((z - z0) / 0.9) % 2) * 0.6;
-      for (let x = off; x < CHUNK_W; x += 1.2) ink.fill.quad(x + 0.6, 0.004, z, 0.05, 0.85, 'py', '#d8c6c4');
-      ink.fill.quad(CHUNK_W / 2, 0.005, z + 0.45, CHUNK_W, 0.04, 'py', '#d8c6c4');
-    }
-    // Low hedge and flower beds at the back
-    ink.box(CHUNK_W / 2, 0.35, z1 + 0.6, CHUNK_W + 0.02, 0.7, 1.0, '#8fb98a', 0, false);
-    for (let x = 1; x < CHUNK_W; x += 1.3) ink.fill.geometry(BLOB, mat(x, 0.75, z1 + 0.5, 0.35, 0.28, 0.35), rng.pick(FLOWERS));
-    // Iron railing along the water, with gaps for landing steps
-    const steps = rng.chance(0.5) ? rng.range(10, CHUNK_W - 6) : -99;
-    for (let x = 0.5; x < CHUNK_W; x += 0.9) {
-      if (Math.abs(x - steps) < 1.4 || x < AVENUE_W) continue;
-      ink.fill.box(x, 0.55, z0 + 0.15, 0.05, 0.8, 0.05, '#4a3a48');
-    }
-    ink.fill.box(CHUNK_W / 2 + AVENUE_W / 2, 0.95, z0 + 0.15, CHUNK_W - AVENUE_W, 0.06, 0.06, '#4a3a48');
-    if (steps > 0) {
-      for (let k = 0; k < 4; k++) ink.box(steps, -0.1 - k * 0.18, z0 - 0.3 - k * 0.35, 2.2, 0.18, 0.5, STONE, 0, false);
-    }
-    // Trees, lamps and benches along the promenade
-    const lampStart = rng.range(5, 9);
-    for (let x = lampStart; x < CHUNK_W - 1; x += 9) {
-      this.lampPost(b, x, z0 + 0.6, 0, false);
-      b.glow.quad(x, WATER_Y + 0.02, z0 - 1.6, 1.1, 3.2, 'py', '#ffffff');
-    }
-    for (let x = lampStart + 4.5; x < CHUNK_W - 2; x += 9) {
-      if (rng.chance(0.75)) {
-        ink.geometry(CYL, mat(x, 0.12, z0 + 3.2, 0.9, 0.24, 0.9), STONE);
-        this.tree(rng, b, x, 0.24, z0 + 3.2, rng.range(1.0, 1.25));
-      }
-    }
-    for (let x = lampStart + 2; x < CHUNK_W - 2; x += rng.range(6, 10)) {
-      // Bench facing the water
-      ink.box(x, 0.45, z0 + 1.4, 1.6, 0.1, 0.5, WOOD);
-      ink.box(x, 0.8, z0 + 1.7, 1.6, 0.4, 0.08, WOOD);
-      if (rng.chance(0.5)) this.resident(rng, b, x + rng.range(-0.3, 0.3), 0.05, z0 + 1.35, 'sit');
-    }
-    if (rng.chance(0.5)) this.stall(rng, b, rng.range(8, CHUNK_W - 4), z0 + 4.2, 2.1);
-    if (rng.chance(0.5)) this.resident(rng, b, rng.range(6, CHUNK_W - 2), 0.02, z0 + rng.range(2.2, 4.5), 'stand');
-    for (let x = AVENUE_W + 3; x < CHUNK_W - 1; x += rng.range(5, 9)) if (rng.chance(0.4)) this.furniture(rng, b, x, z1 - 0.6, 0);
-    // Gardens in front of the promenade (mostly seen on tall phone screens)
-    const g0 = z1 + 1.1;
-    ink.fill.quad(CHUNK_W / 2, 0.006, (g0 + 20) / 2, CHUNK_W + 0.02, 20 - g0, 'py', '#b9d8a8');
-    ink.fill.quad(CHUNK_W / 2, 0.008, g0 + 3.2, CHUNK_W + 0.02, 1.1, 'py', '#eadccb');
-    for (let x = rng.range(1, 4); x < CHUNK_W - 1; x += rng.range(4, 8)) {
-      const z = g0 + rng.range(5, 11);
-      if (rng.chance(0.6)) this.tree(rng, b, x, 0, z, rng.range(1.0, 1.5));
-      else for (let k = 0; k < 3; k++) ink.geometry(BLOB, mat(x + k * 0.6, 0.35, z + rng.range(-0.3, 0.3), 0.6, 0.5, 0.6), rng.pick(['#8fb98a', '#9fd49a', ...FLOWERS]));
-    }
-  }
-
   // =========================================================================
   // Lots: buildings, markets, parks
 
@@ -563,7 +627,7 @@ export class CityChunk {
     ink.box(cx + w / 2 - pt / 2, h + ph / 2, cz, pt, ph, d - 2 * pt, wall);
 
     const shop = facesStreet && row >= 1 && row <= 3 && rng.chance(0.65);
-    if (shop) this.shopfront(rng, b, cx, front, w, accent, row !== 1);
+    if (shop) this.shopfront(rng, b, cx, front, w, accent, row !== 1 || this.district !== 'canal');
     this.windows(rng, b, cx, cz, w, d, floors, trim, accent, shop, detailed);
 
     if (floors >= 3 && rng.chance(0.25)) this.fireEscape(rng, b, cx, front, w, floors);
@@ -600,7 +664,7 @@ export class CityChunk {
     }
     // Shop board above the awning
     const board = rng.pick(this.mats.atlas.small);
-    b.signs.quad(cx, 3.15, z + 0.06, 1.6, 0.8, 'pz', '#ffffff', board);
+    b.signs.quad(cx, 3.15, z + 0.06, 1.6, 0.8, 'pz', '#ffffff', this.signUV(board));
     ink.box(cx, 3.15, z + 0.02, 1.7, 0.9, 0.06, '#4a3a48', 0, false);
 
     if (cafe && rng.chance(0.55)) {
@@ -699,7 +763,7 @@ export class CityChunk {
     const h = Math.min(3.2, (floors - 1) * FLOOR);
     const y = FLOOR + 0.3 + h / 2;
     b.ink.box(x, y, front + 0.14, 0.9, h + 0.2, 0.12, '#3b2a45');
-    b.neon.quad(x, y, front + 0.21, 0.78, h, 'pz', '#ffffff', uv);
+    b.neon.quad(x, y, front + 0.21, 0.78, h, 'pz', '#ffffff', this.signUV(uv));
   }
 
   private fireEscape(rng: Rng, b: Builders, cx: number, front: number, w: number, floors: number) {
@@ -754,7 +818,7 @@ export class CityChunk {
       const chz = rzBack();
       ink.box(chx, roofY + 0.9, chz, 0.6, 1.8, 0.6, '#c9826e');
       ink.box(chx, roofY + 1.85, chz, 0.75, 0.15, 0.75, '#e1a08a');
-      if (rng.chance(0.6)) this.chimneys.push(new THREE.Vector3(chx + this.x0, roofY + 2.0, chz));
+      if (rng.chance(0.6)) this.chimneys.push(new THREE.Vector3(chx + this.x0, roofY + 2.0, this.wz(chz)));
     }
     if (w > 4.5 && rng.chance(0.15)) {
       // Solar panels
@@ -868,7 +932,7 @@ export class CityChunk {
     ink.box(cx - bw * 0.35, y + lift / 2, z, 0.14, lift, 0.14, METAL);
     ink.box(cx + bw * 0.35, y + lift / 2, z, 0.14, lift, 0.14, METAL);
     ink.box(cx, y + lift + bh / 2, z - 0.1, bw + 0.2, bh + 0.2, 0.15, '#6b5c78');
-    b.signs.quad(cx, y + lift + bh / 2, z + 0.0, bw, bh, 'pz', '#ffffff', uv);
+    b.signs.quad(cx, y + lift + bh / 2, z + 0.0, bw, bh, 'pz', '#ffffff', this.signUV(uv));
     // Spotlights that light the board at night
     for (const sx of [-0.3, 0.3]) b.bulbs.geometry(BULB, mat(cx + sx * bw, y + lift - 0.1, z + 0.35, 0.1, 0.1, 0.1), '#ffffff');
   }
@@ -904,7 +968,7 @@ export class CityChunk {
       b.water.geometry(CYL, mat(cx, 0.78, cz, 1.25, 0.02, 1.25), '#ffffff');
       ink.geometry(CYL, mat(cx, 1.1, cz, 0.18, 1.1, 0.18), STONE);
       ink.geometry(CYL, mat(cx, 1.65, cz, 0.6, 0.12, 0.6), STONE);
-      this.fountains.push(new THREE.Vector3(cx + this.x0, 1.75, cz));
+      this.fountains.push(new THREE.Vector3(cx + this.x0, 1.75, this.wz(cz)));
     }
     const n = rng.int(2, 4);
     for (let i = 0; i < n; i++) {
@@ -980,7 +1044,7 @@ export class CityChunk {
     ink.outline.geometry(BOX1, matE(x, y + 2.2, z + 0.25, sw + 0.46, 0.2, 1.46, 0.3), 0x000000);
     // Hanging lantern
     b.bulbs.geometry(BULB, mat(x, y + 1.85, z + 0.5, 0.12, 0.15, 0.12), '#ffffff');
-    b.glow.quad(x, 0.14, z + 0.9, 3, 3, 'py', '#ffffff');
+    b.glow.quad(x, 0.14, z + 0.9, 2, 2, 'py', '#ffffff');
   }
 
   // =========================================================================

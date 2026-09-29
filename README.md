@@ -58,6 +58,30 @@ Everything is generated from the seed, chunk by chunk, as the camera drifts:
 - **Sky and life:** bird flocks that beat their wings in time, chimney smoke drifting with the wind,
   fireflies over the water after dark, falling leaves, the elevated train and the hazy skyline.
 
+## The journey
+
+The camera travels forward through the city along a central corridor that changes every few blocks:
+
+- **Canal**: a boat-height glide past facades on both banks, under bunting and over stone bridges,
+  with the city reflected in the water.
+- **Street**: lamps, trees, parked cars, café tables and awnings on both sides.
+- **Market lane**: rows of striped stalls under a canopy of festoon lights.
+- **Park avenue**: lawns, tree rows, benches and a fountain.
+
+Both banks are generated (the far bank is a mirrored chunk with its own seed), so every district has
+buildings facing it on both sides. Section changes switch between the ground-level ride, a drone flight
+over the rooftops and a high vista with the train overtaking.
+
+## Rendering
+
+- Soft PCF shadows from a 4096² shadow map that follows the camera ahead
+- Screen-space ambient occlusion, pooled toward the palette's lilac instead of grey
+- Screen-space god rays from the sun through the skyline and buildings
+- Bloom on neon, lit windows, lamps and water glints (stronger at night)
+- Real planar reflections in the canal, rippled and painted over
+- Sun-tinted rim light on buildings and characters
+- 4× MSAA HDR render target, depth of field, pastel grade, light leak that follows the sun, grain
+
 The time of day cycles independently (golden hour → dusk → night → dawn → day, 20 minutes by default).
 
 ### Source map
@@ -78,7 +102,8 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 | `?seed=123` | reproduce a world (the current seed is always written to the URL) |
 | `?t=0.35` | freeze time of day (`0` golden hour, `0.16` dusk, `0.35` night, `0.78` day) |
 | `?day=600` | seconds per day/night cycle |
-| `?shot=vista` | lock the camera to a shot: `rooftops`, `city`, `vista` |
+| `?shot=vista` | lock the camera to a shot: `canal` (ground ride), `rooftops`, `vista` |
+| `?x=400` | start further along the city |
 | `?silent` | visuals only, driven by the same sequencer without audio |
 | `?train` | send a train through immediately |
 | `?nopost` | skip post-processing (debug) |

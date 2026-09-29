@@ -94,13 +94,15 @@ export class Boats {
     }
   }
 
-  update(dt: number, camX: number, time: number, beatPulse: number) {
+  update(dt: number, camX: number, time: number, beatPulse: number, isCanal: (x: number) => boolean) {
     for (const b of this.boats) {
       b.x += b.speed * b.dir * dt;
       const rel = b.x - camX;
       if (rel > SPAN_AHEAD) b.x = camX - SPAN_BEHIND;
       if (rel < -SPAN_BEHIND) b.x = camX + SPAN_AHEAD;
       b.obj.position.x = b.x;
+      // Boats only exist where there's water (whole boat must fit).
+      b.obj.visible = isCanal(b.x - 1.6) && isCanal(b.x + 1.6);
       b.obj.position.y = WATER_Y + Math.sin(time * 1.6 + b.phase) * 0.05 + beatPulse * 0.02;
       b.obj.rotation.z = Math.sin(time * 1.2 + b.phase) * 0.03;
       b.obj.rotation.x = Math.sin(time * 0.9 + b.phase * 2) * 0.03;
