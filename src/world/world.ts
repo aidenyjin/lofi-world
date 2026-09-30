@@ -125,7 +125,8 @@ export class World {
     this.birds = new Birds(this.mats);
     this.water = new CanalWater(this.renderer);
 
-    this.scene.fog = new THREE.Fog(0xffffff, 45, 430);
+    // Strong aerial perspective: the city washes out to pale haze well before the end of what's built.
+    this.scene.fog = new THREE.Fog(0xffffff, 25, 330);
     this.scene.add(this.sky.mesh, this.skyline.group, this.farSkyline.group, this.railway.group, this.leaves.mesh, this.traffic.group, this.boats.group, this.birds.mesh, this.particles.points, this.fireflies.points, this.water.mesh, this.hemi, this.sun, this.sun.target);
 
     this.sun.castShadow = true;
@@ -141,7 +142,7 @@ export class World {
     this.sun.shadow.normalBias = 0.03;
     this.sun.shadow.radius = 3;
 
-    this.timeOfDay = opts.fixedTime ?? 0.02;
+    this.timeOfDay = opts.fixedTime ?? 0.05; // start on a spring day
     this.updateChunks(true);
     this.listen();
     this.resize();

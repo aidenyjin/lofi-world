@@ -57,7 +57,7 @@ const HOODS: Record<HoodName, Hood> = {
   },
   harbour: {
     name: 'harbour',
-    walls: ['#b7654f', '#a45a48', '#c9785c', '#8f5a4f', '#c98a6a', '#9c6d5e'],
+    walls: ['#e0907a', '#d88a78', '#eaa488', '#c98f86', '#efb496', '#d7a092'],
     trims: ['#e9dccb', '#d9c6b2', '#f1e5df'],
     roofs: ['#8d8398', '#9f98ad', '#7a7488'],
     accents: ['#5b6fb0', '#e9786f', '#f6b94f', '#57907a'],
@@ -67,7 +67,7 @@ const HOODS: Record<HoodName, Hood> = {
   },
   neon: {
     name: 'neon',
-    walls: ['#4a4470', '#3d3a5c', '#5a3d5c', '#2f3550', '#4f5a7a', '#6b4f7a'],
+    walls: ['#6c64a0', '#5f5a8c', '#7a5c8e', '#55608c', '#6f7ea6', '#8a6fa0'],
     trims: ['#8a7fb8', '#6b5c8a', '#a9a2cf'],
     roofs: ['#3b3552', '#4a4466'],
     accents: ['#ff8fb1', '#8fe3ff', '#b6a2ff', '#9dffc8', '#ffe08a'],

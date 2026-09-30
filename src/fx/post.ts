@@ -40,6 +40,7 @@ export class Post {
     uMaxBlur: { value: 9 },
     uTime: { value: 0 },
     uLift: { value: new THREE.Color() },
+    uHaze: { value: new THREE.Color() },
     uLeak: { value: new THREE.Color() },
     uSun: { value: new THREE.Color() },
     uLeakPos: { value: new THREE.Vector2(0.85, 1.05) },
@@ -196,7 +197,7 @@ export class Post {
         uniform sampler2D tColor, tDepth, tFx;
         uniform vec2 uResolution, uLeakPos;
         uniform float uNear, uFar, uFocus, uAperture, uMaxBlur, uTime, uMood, uPulse, uNight, uAO, uRays;
-        uniform vec3 uLift, uLeak, uSun;
+        uniform vec3 uLift, uLeak, uSun, uHaze;
         varying vec2 vUv;
 
         float viewDist(vec2 uv) {
@@ -251,8 +252,10 @@ export class Post {
           // --- Grade -------------------------------------------------------
           float luma = dot(color, vec3(0.299, 0.587, 0.114));
           color = mix(uLift, color, 0.93 + 0.07 * smoothstep(0.0, 0.6, luma));
-          color = mix(vec3(luma), color, 1.1);
-          color = mix(color, vec3(0.5), 0.04);
+          color = mix(vec3(luma), color, 1.0);
+          // High-key and hazy by day: everything drifts a little toward the haze colour.
+          color = mix(color, uHaze, 0.07 * (1.0 - uNight));
+          color *= 1.0 + 0.05 * (1.0 - uNight);
           vec3 warm = vec3(1.04, 1.0, 0.94);
           vec3 cool = vec3(0.95, 0.99, 1.06);
           color *= mix(vec3(1.0), uMood > 0.0 ? warm : cool, abs(uMood));
@@ -266,7 +269,7 @@ export class Post {
           color *= 1.0 + uPulse * 0.025;
 
           float vig = smoothstep(1.25, 0.35, length((vUv - 0.5) * aspect * vec2(0.9, 1.1)));
-          color = mix(color * mix(vec3(1.0), uLift * 1.6, 0.25), color, vig);
+          color = mix(color * mix(vec3(1.0), uLift * 1.6, 0.12), color, vig);
 
           float t = floor(uTime * 12.0);
           float grain = hash(vUv * uResolution + t * 17.0) - 0.5;
@@ -305,6 +308,7 @@ export class Post {
     u.uFar.value = camera.far;
     u.uTime.value = time;
     u.uLift.value.copy(p.shadowLift);
+    u.uHaze.value.copy(p.haze);
     u.uLeak.value.copy(p.sun);
     u.uSun.value.copy(p.sun).multiplyScalar(0.55 * (1 - p.nightness * 0.8));
     u.uNight.value = p.nightness;

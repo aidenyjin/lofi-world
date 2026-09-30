@@ -81,6 +81,22 @@ nothing that can actually be seen is left out. Tiny details (flowers, fruit, ivy
 and the canal reflection pass only runs when there's water ahead. Together that's 35-50% fewer
 triangles than drawing everything.
 
+## Look
+
+A cosy, illustrated style after the Chillhop animations: bright and hazy, pastel, low contrast.
+
+- **Spring day** (the default): pale blue sky washing to near-white, lilac-blue shade. Shadows get
+  their colour from the ambient light instead of going dark.
+- **Sunset** is the autumn look: a warm orange haze, backlit by a low sun, and the trees turn orange
+  and gold with it (blossom stays pink). Then dusk, a soft night and dawn.
+- **Outlines** are thin and drawn in a darker shade of whatever they outline, break up here and there
+  like a sketched line, and fade out with distance so the far city has no lines at all.
+- **Surfaces** are flat colour with a gouache finish: soft washes and dry-brush grain over a faint hint
+  of brick, stone or plaster.
+- **Windows** are flat, sky-tinted panes with light streaks by day; the rooms behind show through
+  when they're lit at night.
+- Strong aerial perspective: the city fades to pale haze in the distance.
+
 ## Rendering
 
 - Soft PCF shadows from a 4096² shadow map that follows the camera ahead
@@ -117,7 +133,7 @@ The time of day cycles independently (golden hour → dusk → night → dawn �
 | Param | Effect |
 | --- | --- |
 | `?seed=123` | reproduce a world (the current seed is always written to the URL) |
-| `?t=0.35` | freeze time of day (`0` golden hour, `0.16` dusk, `0.35` night, `0.78` day) |
+| `?t=0.2` | freeze time of day (`0.2` spring day, `0.5` sunset, `0.62` dusk, `0.78` night, `0.93` dawn) |
 | `?day=600` | seconds per day/night cycle |
 | `?x=400` | start further along the city |
 | `?silent` | visuals only, driven by the same sequencer without audio |

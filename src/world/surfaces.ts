@@ -24,7 +24,7 @@ export const SURFACE_GLSL = /* glsl */ `
   }
   float sFbm(vec2 p) { return 0.5 * sNoise(p) + 0.3 * sNoise(p * 2.1 + 7.3) + 0.2 * sNoise(p * 4.3 - 3.1); }
 
-  vec3 surfaceDetail(float sid, vec3 p, vec3 n, vec3 c) {
+  vec3 surfaceDetailRaw(float sid, vec3 p, vec3 n, vec3 c) {
     int id = int(sid + 0.5);
     if (id == 0) return c;
     vec3 an = abs(n);
@@ -76,9 +76,9 @@ export const SURFACE_GLSL = /* glsl */ `
       float gap = step(min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)), 0.045);
       return c * (0.9 + 0.12 * sHash(floor(b)) + 0.07 * sNoise(uv * 5.0)) * (1.0 - 0.2 * gap);
     }
-    if (id == 8) { // foliage: dappled leaf clusters, lighter on top
+    if (id == 8) { // foliage: dappled leaf clusters, lighter on top; turns autumn orange at sunset
       float cl = sFbm(p.xz * 2.3 + p.y * 1.9);
-      return c * (0.78 + 0.42 * smoothstep(0.35, 0.72, cl) + 0.2 * max(n.y, 0.0));
+      return c * (0.82 + 0.34 * smoothstep(0.35, 0.72, cl) + 0.16 * max(n.y, 0.0));
     }
     if (id == 9) { // clay / glazed roof tiles
       float rows = fract(uv.y * 3.4);
@@ -92,5 +92,30 @@ export const SURFACE_GLSL = /* glsl */ `
       return c * (0.84 + 0.2 * sFbm(p.xz * 0.8) + 0.08 * sHash(floor(p.xz * 20.0)));
     }
     return c;
+  }
+
+  // Autumn: green leaves turn orange and gold (blossom stays pink). Runs on the
+  // final colour, after the vertex colour is applied.
+  vec3 autumnShift(vec3 c, vec3 p) {
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    float pick = sHash(floor(p.xz * 0.7) + floor(p.y * 0.5));
+    vec3 fall = mix(vec3(0.97, 0.58, 0.27), vec3(0.99, 0.76, 0.33), pick) * (0.55 + 0.7 * l);
+    float green = smoothstep(0.02, 0.12, c.g - max(c.r, c.b));
+    return mix(c, fall, uAutumn * green);
+  }
+
+  // Gouache finish over everything: the patterns above are softened to a hint,
+  // then big soft washes and dry-brush streaks give flat colour a painted grain.
+  vec3 surfaceDetail(float sid, vec3 p, vec3 n, vec3 c) {
+    vec3 r = surfaceDetailRaw(sid, p, n, c);
+    int id = int(sid + 0.5);
+    if (id != 8 && id != 0) r = mix(c, r, 0.5);
+    vec3 an = abs(n);
+    vec2 uv = an.y > 0.6 ? p.xz : (an.x > an.z ? p.zy : p.xy);
+    float wash = sFbm(uv * 0.18 + 11.0);
+    float dry = sNoise(vec2(uv.x * 0.7 + uv.y * 0.15, uv.y * 7.0));
+    r *= 0.95 + 0.09 * wash;
+    r *= 1.0 + 0.045 * smoothstep(0.55, 0.9, dry) - 0.03 * smoothstep(0.45, 0.1, dry);
+    return r;
   }
 `;

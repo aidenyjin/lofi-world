@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 
-// Time-of-day palettes. Hex values are sRGB and tuned for a pastel,
-// sun-bleached look: warm haze in the day, lilac shadows, neon at night.
+// Time-of-day palettes. Hex values are sRGB, tuned for a bright, hazy,
+// cosy illustrated look: a spring-blue day with lilac shadows, a warm autumn
+// sunset (the trees turn orange with it), then a soft night.
 export interface Palette {
   skyTop: string;
   skyBottom: string;
@@ -15,53 +16,58 @@ export interface Palette {
   shadowLift: string; // colour that shadows drift toward in the grade
   spriteTint: string; // multiplier for flat cut-out sprites
   nightness: number; // 0 = day, 1 = full night (window glow, bulbs)
+  autumn: number; // 0 = spring foliage, 1 = autumn orange
 }
 
-const golden: Palette = {
-  skyTop: '#f7d2b4', skyBottom: '#fff3e3', haze: '#fbe2cf',
-  sun: '#ffd49a', sunIntensity: 2.6,
-  hemiSky: '#ffe6cc', hemiGround: '#d9a191', hemiIntensity: 1.25,
-  skyline: '#b7c2ea', shadowLift: '#7a4f78', spriteTint: '#fff6ea', nightness: 0,
+// Spring day: pale blue sky washing to near-white at the horizon, lilac-blue
+// shade (the ambient light is what colours the shadows), low contrast.
+const spring: Palette = {
+  skyTop: '#7fbcf0', skyBottom: '#f6f4fb', haze: '#eef1fb',
+  sun: '#fff5e6', sunIntensity: 1.9,
+  hemiSky: '#cdd4ff', hemiGround: '#f3d3e2', hemiIntensity: 1.65,
+  skyline: '#b8d2f3', shadowLift: '#8f8ad8', spriteTint: '#ffffff', nightness: 0, autumn: 0,
+};
+
+// Sunset: the orange autumn look, backlit and glowing.
+const sunset: Palette = {
+  skyTop: '#f4b68e', skyBottom: '#fff1dc', haze: '#fbe2c8',
+  sun: '#ffc98c', sunIntensity: 2.0,
+  hemiSky: '#ffd9c2', hemiGround: '#e9a896', hemiIntensity: 1.5,
+  skyline: '#e2bcc8', shadowLift: '#b0709a', spriteTint: '#fff2e2', nightness: 0.08, autumn: 1,
 };
 
 const dusk: Palette = {
-  skyTop: '#7470b8', skyBottom: '#f6a98c', haze: '#dca2a8',
-  sun: '#ff9d70', sunIntensity: 1.5,
-  hemiSky: '#c1a6de', hemiGround: '#7d5878', hemiIntensity: 1.0,
-  skyline: '#8b82bd', shadowLift: '#4d3a6e', spriteTint: '#f1d6de', nightness: 0.45,
+  skyTop: '#8a84c8', skyBottom: '#f6b49a', haze: '#e0aeb4',
+  sun: '#ff9d70', sunIntensity: 1.2,
+  hemiSky: '#c9b2e6', hemiGround: '#8d6888', hemiIntensity: 1.1,
+  skyline: '#9a90c8', shadowLift: '#5a4880', spriteTint: '#f1d6de', nightness: 0.45, autumn: 0.8,
 };
 
 const night: Palette = {
-  skyTop: '#161b40', skyBottom: '#463a74', haze: '#3a3668',
-  sun: '#9fb2ff', sunIntensity: 0.55,
-  hemiSky: '#4e5ba6', hemiGround: '#2a2142', hemiIntensity: 0.8,
-  skyline: '#2e3366', shadowLift: '#1d1a3c', spriteTint: '#8f93c6', nightness: 1,
+  skyTop: '#1f2654', skyBottom: '#534683', haze: '#463f78',
+  sun: '#a9bbff', sunIntensity: 0.55,
+  hemiSky: '#5c68b4', hemiGround: '#352a52', hemiIntensity: 0.9,
+  skyline: '#3a4078', shadowLift: '#26214a', spriteTint: '#8f93c6', nightness: 1, autumn: 0.3,
 };
 
 const dawn: Palette = {
-  skyTop: '#9fb6e2', skyBottom: '#ffd4c6', haze: '#f1d5d9',
-  sun: '#ffc6a6', sunIntensity: 1.7,
-  hemiSky: '#d8d6f2', hemiGround: '#b98f9c', hemiIntensity: 1.1,
-  skyline: '#a8b3e0', shadowLift: '#6a5680', spriteTint: '#f6e6ee', nightness: 0.25,
+  skyTop: '#a4c2ec', skyBottom: '#ffdcd2', haze: '#f3dde4',
+  sun: '#ffd0b4', sunIntensity: 1.5,
+  hemiSky: '#dcdcf6', hemiGround: '#c49fb0', hemiIntensity: 1.35,
+  skyline: '#b2bfe6', shadowLift: '#7d6a98', spriteTint: '#f6e6ee', nightness: 0.25, autumn: 0,
 };
 
-const day: Palette = {
-  skyTop: '#7fb7ec', skyBottom: '#f2ecf5', haze: '#e8e6f2',
-  sun: '#fff1dc', sunIntensity: 2.4,
-  hemiSky: '#d4e6ff', hemiGround: '#e3c3b8', hemiIntensity: 1.2,
-  skyline: '#9dbde8', shadowLift: '#5b5a8e', spriteTint: '#ffffff', nightness: 0,
-};
-
-// Keyframes around the day. t is 0..1; we start at golden hour.
+// Keyframes around the day. t is 0..1; the journey starts on a spring day.
 const keys: { t: number; p: Palette }[] = [
-  { t: 0.0, p: golden },
-  { t: 0.14, p: dusk },
-  { t: 0.24, p: night },
-  { t: 0.5, p: night },
-  { t: 0.6, p: dawn },
-  { t: 0.72, p: day },
-  { t: 0.9, p: golden },
-  { t: 1.0, p: golden },
+  { t: 0.0, p: spring },
+  { t: 0.36, p: spring },
+  { t: 0.46, p: sunset },
+  { t: 0.54, p: sunset },
+  { t: 0.62, p: dusk },
+  { t: 0.7, p: night },
+  { t: 0.86, p: night },
+  { t: 0.93, p: dawn },
+  { t: 1.0, p: spring },
 ];
 
 export interface ResolvedPalette {
@@ -77,19 +83,20 @@ export interface ResolvedPalette {
   shadowLift: THREE.Color;
   spriteTint: THREE.Color;
   nightness: number;
+  autumn: number;
 }
 
 const colorKeys = [
   'skyTop', 'skyBottom', 'haze', 'sun', 'hemiSky', 'hemiGround', 'skyline', 'shadowLift', 'spriteTint',
 ] as const;
-const numberKeys = ['sunIntensity', 'hemiIntensity', 'nightness'] as const;
+const numberKeys = ['sunIntensity', 'hemiIntensity', 'nightness', 'autumn'] as const;
 
 export function createResolvedPalette(): ResolvedPalette {
   return {
     skyTop: new THREE.Color(), skyBottom: new THREE.Color(), haze: new THREE.Color(),
     sun: new THREE.Color(), hemiSky: new THREE.Color(), hemiGround: new THREE.Color(),
     skyline: new THREE.Color(), shadowLift: new THREE.Color(), spriteTint: new THREE.Color(),
-    sunIntensity: 0, hemiIntensity: 0, nightness: 0,
+    sunIntensity: 0, hemiIntensity: 0, nightness: 0, autumn: 0,
   };
 }
 
@@ -120,15 +127,15 @@ function smooth(x: number): number {
 // Sun (and moon) direction over the day as azimuth/elevation keyframes.
 // Azimuth 0 = light coming from behind the camera; positive = from the right.
 const sunKeys: { t: number; az: number; el: number }[] = [
-  { t: 0.0, az: 0.95, el: 0.5 },
-  { t: 0.14, az: 1.25, el: 0.32 },
-  { t: 0.2, az: 1.35, el: 0.25 },
-  { t: 0.26, az: -0.8, el: 0.85 }, // moon
-  { t: 0.54, az: -1.0, el: 0.75 },
-  { t: 0.62, az: -1.2, el: 0.4 },
-  { t: 0.74, az: -0.3, el: 1.0 },
-  { t: 0.9, az: 0.75, el: 0.62 },
-  { t: 1.0, az: 0.95, el: 0.5 },
+  { t: 0.0, az: 0.9, el: 0.95 }, // spring day: high, from behind and to the right
+  { t: 0.36, az: 1.3, el: 0.7 },
+  { t: 0.46, az: 2.2, el: 0.3 }, // sunset: low and ahead, backlighting the street
+  { t: 0.54, az: 2.45, el: 0.18 },
+  { t: 0.62, az: 2.6, el: 0.08 },
+  { t: 0.68, az: -0.8, el: 0.85 }, // moon
+  { t: 0.86, az: -1.0, el: 0.75 },
+  { t: 0.93, az: -1.2, el: 0.35 }, // dawn
+  { t: 1.0, az: 0.9, el: 0.95 },
 ];
 
 const dirA = new THREE.Vector3();
@@ -157,5 +164,5 @@ export const WALLS = [
 ] as const;
 export const TRIM = ['#fff1d6', '#fbe7b8', '#f7d7c9', '#e9e4ff'] as const;
 export const ROOF = ['#d9c3cf', '#e8cfc0', '#c7c3dc', '#e3d6c4', '#cdb6c4'] as const;
-export const FOLIAGE = ['#f29a4a', '#f6b64c', '#ee7d45', '#f7c96b', '#e8a35f'] as const;
+export const FOLIAGE = ['#9fd18a', '#b6dd8e', '#86c38a', '#c7e39a', '#a5d6a0'] as const;
 export const INK = '#3b2a3a';

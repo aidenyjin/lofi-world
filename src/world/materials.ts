@@ -16,6 +16,8 @@ const WHITE = new THREE.Color('#ffffff');
 
 /** Shared rim light: a soft sun-coloured edge on toon surfaces. */
 export const rimUniforms = { uRim: { value: new THREE.Color('#ffd9a8') } };
+/** How far the trees have turned toward autumn (follows the sunset). */
+export const surfaceUniforms = { uAutumn: { value: 0 } };
 
 function addRim(shader: THREE.WebGLProgramParametersWithUniforms) {
   Object.assign(shader.uniforms, rimUniforms);
@@ -31,6 +33,7 @@ function addRim(shader: THREE.WebGLProgramParametersWithUniforms) {
 
 /** World-space procedural surface detail (brick, stone, wood, asphalt...). */
 function addSurfaces(shader: THREE.WebGLProgramParametersWithUniforms) {
+  Object.assign(shader.uniforms, surfaceUniforms);
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nattribute float aSurf;\nvarying float vSurf;\nvarying vec3 vWPos;\nvarying vec3 vWNor;')
     .replace(
@@ -41,8 +44,56 @@ function addSurfaces(shader: THREE.WebGLProgramParametersWithUniforms) {
       vWNor = normalize(mat3(modelMatrix) * objectNormal);`,
     );
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying float vSurf;\nvarying vec3 vWPos;\nvarying vec3 vWNor;\n' + SURFACE_GLSL)
-    .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = surfaceDetail(vSurf, vWPos, normalize(vWNor), diffuseColor.rgb);');
+    .replace('#include <common>', '#include <common>\nuniform float uAutumn;\nvarying float vSurf;\nvarying vec3 vWPos;\nvarying vec3 vWNor;\n' + SURFACE_GLSL)
+    .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = surfaceDetail(vSurf, vWPos, normalize(vWNor), diffuseColor.rgb);')
+    .replace('#include <color_fragment>', '#include <color_fragment>\nif (int(vSurf + 0.5) == 8) diffuseColor.rgb = autumnShift(diffuseColor.rgb, vWPos);');
+}
+
+/** How bright the unlit outline shader should be (follows the light, dims at night). */
+export const inkUniforms = { uInk: { value: new THREE.Color(INK) }, uLineLight: { value: new THREE.Color(1, 1, 1) } };
+
+/**
+ * Outline hulls carry their shape's colour. The line is a darker, slightly
+ * plum shade of that colour; it breaks up here and there like a sketched
+ * line, and fades into the shape's own colour with distance so the far
+ * city is drawn without lines at all. Hulls with no colour (black) are
+ * drawn in plain ink.
+ */
+function inkMaterial(): THREE.MeshBasicMaterial {
+  // (Its colour stays ink: birds borrow it. The shader draws the lines from the vertex colours.)
+  const m = new THREE.MeshBasicMaterial({ color: INK, vertexColors: true, side: THREE.BackSide });
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, inkUniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vInkW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvInkW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uInk, uLineLight;
+        varying vec3 vInkW;
+        float iHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float iNoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(iHash(i), iHash(i + vec2(1, 0)), u.x), mix(iHash(i + vec2(0, 1)), iHash(i + vec2(1, 1)), u.x), u.y);
+        }`)
+      .replace('#include <color_fragment>', `
+        vec3 fillC = vColor.rgb;
+        bool plain = dot(fillC, vec3(1.0)) < 0.03;
+        vec3 lineC = plain ? uInk : mix(fillC * 0.42, uInk, 0.3);
+        // Sketchy breaks along the line
+        float gap = smoothstep(0.66, 0.8, iNoise(vInkW.xz * 1.3 + vInkW.y * 1.7));
+        // Distance: lines thin out into the haze
+        #ifdef USE_FOG
+          float far = smoothstep(30.0, 140.0, vFogDepth);
+        #else
+          float far = 0.0;
+        #endif
+        vec3 base = plain ? mix(uInk, vec3(0.75), 0.5) : fillC;
+        diffuseColor.rgb = mix(lineC, base, max(gap * 0.75, far)) * uLineLight;`);
+  };
+  m.customProgramCacheKey = () => 'ink-illustrated';
+  return m;
 }
 
 function rimmed<M extends THREE.Material>(m: M): M {
@@ -64,7 +115,8 @@ export class Materials {
     gradientMap: this.gradient,
   }));
 
-  readonly ink = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+  /** Illustrated outlines: see inkMaterial(). */
+  readonly ink = inkMaterial();
 
   /** Windows that light up at night. */
   readonly windowLit = new THREE.MeshBasicMaterial({ color: WINDOW_DAY.clone(), vertexColors: true });
@@ -230,6 +282,9 @@ export class Materials {
 
   update(p: ResolvedPalette, beatPulse: number, time = 0, wind = 0.3, neonFlicker = 0): void {
     const n = p.nightness;
+    surfaceUniforms.uAutumn.value = p.autumn;
+    // Outlines are unlit: dim them with the light so they don't glow at night.
+    inkUniforms.uLineLight.value.setRGB(1, 1, 1).lerp(new THREE.Color(0.32, 0.34, 0.52), n);
     this.spriteTint.copy(p.spriteTint);
     for (const m of this.tinted) m.color.copy(this.spriteTint);
 

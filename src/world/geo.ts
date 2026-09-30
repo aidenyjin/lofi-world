@@ -223,13 +223,19 @@ export class GeoBuilder {
 
 /**
  * Fill + ink-outline pair. Outlines use the inverted-hull trick: the same
- * shapes slightly inflated, drawn back-faces only in ink colour.
+ * shapes slightly inflated, drawn back-faces only. Each hull carries its
+ * shape's own colour, so the ink shader can draw a line that's a darker
+ * shade of the thing it outlines (like a hand-inked illustration).
  */
 export class InkedBuilder {
   readonly fill = new GeoBuilder();
   readonly outline = new GeoBuilder();
+  private thickness: number;
 
-  constructor(private thickness = 0.09) {}
+  constructor(thickness = 0.09) {
+    // Thin, illustrated lines rather than heavy cartoon outlines.
+    this.thickness = thickness * 0.55;
+  }
 
   /** Surface type for the fill (outlines are plain ink). */
   set surface(v: number) {
@@ -249,7 +255,7 @@ export class InkedBuilder {
     this.fill.box(x, y, z, w, h, d, color, rotY);
     if (ink) {
       const t = this.thickness * 2;
-      this.outline.box(x, y, z, w + t, h + t, d + t, 0x000000, rotY);
+      this.outline.box(x, y, z, w + t, h + t, d + t, color, rotY);
     }
     return this;
   }
@@ -260,7 +266,7 @@ export class InkedBuilder {
     this.fill.geometry(UNIT_BOX, rm.compose(pos, rq, size), color);
     if (ink) {
       const t = this.thickness * 2;
-      this.outline.geometry(UNIT_BOX, rm.compose(pos, rq, rs.set(size.x + t, size.y + t, size.z + t)), 0x000000);
+      this.outline.geometry(UNIT_BOX, rm.compose(pos, rq, rs.set(size.x + t, size.y + t, size.z + t)), color);
     }
     return this;
   }
@@ -282,7 +288,7 @@ export class InkedBuilder {
           p.getZ(i) + (n.getZ(i) * this.thickness) / s.z,
         );
       }
-      this.outline.geometry(inflated, m, 0x000000);
+      this.outline.geometry(inflated, m, color);
       inflated.dispose();
     }
     return this;

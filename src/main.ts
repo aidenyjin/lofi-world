@@ -89,11 +89,11 @@ bus.on('chord', ({ name }) => {
 });
 
 function timeLabel(t: number): string {
-  if (t < 0.12 || t > 0.9) return 'golden hour';
-  if (t < 0.22) return 'dusk';
-  if (t < 0.55) return 'night';
-  if (t < 0.66) return 'dawn';
-  return 'day';
+  if (t < 0.4 || t > 0.97) return 'spring day';
+  if (t < 0.58) return 'sunset';
+  if (t < 0.66) return 'dusk';
+  if (t < 0.9) return 'night';
+  return 'dawn';
 }
 
 function loop() {

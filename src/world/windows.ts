@@ -172,6 +172,14 @@ export class WindowMaterial extends THREE.ShaderMaterial {
           col += uSun * glint * 0.18 * (1.0 - uNight);
           col += sky * sheen * 0.12 * (1.0 - 0.6 * uNight);
 
+          // By day the glass reads as a flat illustrated pane: sky-tinted with a
+          // couple of light streaks. Rooms show through when they're lit at night.
+          float diag = fract(vUv.x * 0.9 - vUv.y * 0.55 + seed * 0.3);
+          float streak = smoothstep(0.07, 0.0, abs(diag - 0.3)) + 0.6 * smoothstep(0.035, 0.0, abs(diag - 0.45));
+          vec3 pane = mix(uSkyBottom, uSkyTop, 0.3 + 0.45 * vUv.y) * 0.9 + streak * 0.22;
+          float flatPane = 0.72 * (1.0 - uNight * step(0.25, state));
+          col = mix(col, pane, flatPane);
+
           // ---- Frame and mullions, drawn so they cast no parallax
           float border = step(min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)), 0.045);
           float mull = shop > 0.5 ? 0.0 : step(abs(vUv.x - 0.5), 0.022) + step(abs(vUv.y - 0.56), 0.02);
